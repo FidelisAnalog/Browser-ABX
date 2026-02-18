@@ -1,0 +1,15 @@
+name: Minimal Test
+welcome:
+  description: "A minimal ABX listening test."
+options:
+  - name: Sample A
+    audioUrl: https://example.com/sample-a.wav
+  - name: Sample B
+    audioUrl: https://example.com/sample-b.wav
+tests:
+  - name: AB Preference
+    testType: AB
+    options:
+      - Sample A
+      - Sample B
+    repeat: 5

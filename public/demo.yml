@@ -1,0 +1,62 @@
+name: Demo Listening Test
+welcome:
+  description: |
+    # Welcome to the Demo Listening Test
+
+    This test will compare audio samples to determine if you can reliably
+    identify differences between them.
+
+    Please use headphones in a quiet environment for best results.
+  form:
+    - name: Age
+      inputType: number
+    - name: Headphone Type
+      inputType: select
+      options:
+        - Over-ear
+        - On-ear
+        - In-ear
+        - Speakers
+
+results:
+  description: |
+    Thank you for completing the listening test! Your results are shown below.
+
+options:
+  - name: Lossless
+    audioUrl: https://example.com/lossless.flac
+    tag: Lossless
+  - name: 320kbps
+    audioUrl: https://example.com/320kbps.flac
+    tag: Lossy
+  - name: 128kbps
+    audioUrl: https://example.com/128kbps.flac
+    tag: Lossy
+
+tests:
+  - name: "Lossless vs 320kbps"
+    testType: ABX
+    description: "Can you identify which is X?"
+    options:
+      - Lossless
+      - 320kbps
+    repeat: 10
+
+  - name: "Lossless vs 128kbps"
+    testType: ABX
+    description: "Can you identify which is X?"
+    options:
+      - Lossless
+      - 128kbps
+    repeat: 10
+    ducking: true
+    duckDuration: 5
+
+  - name: "Preference: All Bitrates"
+    testType: AB
+    description: "Which do you prefer?"
+    options:
+      - Lossless
+      - 320kbps
+      - 128kbps
+    repeat: 5
