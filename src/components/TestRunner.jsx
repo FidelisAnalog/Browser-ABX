@@ -1,13 +1,18 @@
 /**
  * TestRunner — main test orchestrator.
  * Handles config loading, audio initialization, test sequencing, and results collection.
+ *
+ * Audio lifecycle:
+ * 1. Parse config → collect all unique audio URLs
+ * 2. Fetch + decode all audio files once → cache decoded data by URL
+ * 3. Create AudioEngine once at source sample rate
+ * 4. Per test iteration: build AudioBuffers for the current options, load into engine
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Box, CircularProgress, Container, Typography } from '@mui/material';
 import { parseConfig } from '../utils/config';
 import { loadAndValidate, createAudioBuffer } from '../audio/audioLoader';
-import { AudioEngine } from '../audio/audioEngine';
 import { useAudioEngine } from '../audio/useAudioEngine';
 import { shuffle } from '../utils/shuffle';
 import Welcome from './Welcome';
@@ -23,7 +28,10 @@ import SampleRateInfo from './SampleRateInfo';
 export default function TestRunner({ configUrl }) {
   const [config, setConfig] = useState(null);
   const [configError, setConfigError] = useState(null);
-  const [audioData, setAudioData] = useState(null);
+
+  // Decoded audio cache: Map<url, DecodedAudio>
+  const decodedCacheRef = useRef(new Map());
+  const [audioSampleRate, setAudioSampleRate] = useState(null);
   const [audioInitialized, setAudioInitialized] = useState(false);
   const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
 
@@ -36,6 +44,21 @@ export default function TestRunner({ configUrl }) {
   // Current test options (shuffled per iteration)
   const [currentOptions, setCurrentOptions] = useState([]);
   const [xOption, setXOption] = useState(null);
+
+  // Current AudioBuffers for the active test iteration
+  const [currentBuffers, setCurrentBuffers] = useState([]);
+
+  // Get current test config (for ducking settings)
+  const currentTest = config && testStep >= 0 && testStep < config.tests.length
+    ? config.tests[testStep]
+    : null;
+
+  // Create audio engine once when sample rate is known
+  const engine = useAudioEngine({
+    sampleRate: audioSampleRate,
+    duckingForced: currentTest?.ducking || false,
+    duckDuration: currentTest?.duckDuration || 5,
+  });
 
   // Load config
   useEffect(() => {
@@ -67,7 +90,7 @@ export default function TestRunner({ configUrl }) {
     return Array.from(urls);
   }, [config]);
 
-  // Load audio
+  // Load and decode all audio files once
   useEffect(() => {
     if (audioUrls.length === 0) return;
 
@@ -75,72 +98,75 @@ export default function TestRunner({ configUrl }) {
       setLoadProgress({ loaded, total });
     })
       .then((data) => {
-        setAudioData(data);
+        // Cache decoded data by URL
+        const cache = new Map();
+        for (let i = 0; i < audioUrls.length; i++) {
+          cache.set(audioUrls[i], data.decoded[i]);
+        }
+        decodedCacheRef.current = cache;
+        setAudioSampleRate(data.sampleRate);
         setAudioInitialized(true);
       })
       .catch((err) => setConfigError(err.message));
   }, [audioUrls]);
 
-  // Get current test config
-  const currentTest = config && testStep >= 0 && testStep < config.tests.length
-    ? config.tests[testStep]
-    : null;
+  /**
+   * Build AudioBuffers for a set of options (+ optional X) and load into engine.
+   */
+  const loadIterationAudio = useCallback((options, xOpt) => {
+    const ctx = engine.getContext();
+    if (!ctx) return;
 
-  // Audio engine for current test
-  const currentTestUrls = useMemo(() => {
-    if (!currentOptions || currentOptions.length === 0) return [];
-    const urls = currentOptions.map((o) => o.audioUrl);
-    if (xOption) urls.push(xOption.audioUrl);
-    return urls;
-  }, [currentOptions, xOption]);
+    const cache = decodedCacheRef.current;
+    const buffers = options.map((opt) => {
+      const decoded = cache.get(opt.audioUrl);
+      return createAudioBuffer(ctx, decoded);
+    });
 
-  const engine = useAudioEngine({
-    urls: currentTestUrls,
-    duckingForced: currentTest?.ducking || false,
-    duckDuration: currentTest?.duckDuration || 5,
-  });
+    if (xOpt) {
+      const xDecoded = cache.get(xOpt.audioUrl);
+      buffers.push(createAudioBuffer(ctx, xDecoded));
+    }
 
-  // Build AudioBuffers for current test options from cached data
-  const currentAudioBuffers = useMemo(() => {
-    if (!audioData || !engine.sampleRateInfo || currentTestUrls.length === 0) return [];
-    // We need AudioBuffers but our engine already loaded them
-    // This is a placeholder — the engine handles buffer management internally
-    return [];
-  }, [audioData, engine.sampleRateInfo, currentTestUrls]);
+    setCurrentBuffers(buffers);
+    engine.loadBuffers(buffers);
+  }, [engine]);
 
   // Setup test iteration (shuffle options, pick X for ABX)
   const setupIteration = useCallback((test) => {
     const shuffled = shuffle(test.options);
     setCurrentOptions(shuffled);
 
+    let xOpt = null;
     if (test.testType.toLowerCase() === 'abx') {
       const randomOption = shuffled[Math.floor(Math.random() * shuffled.length)];
-      setXOption({
-        name: 'X',
-        audioUrl: randomOption.audioUrl,
-      });
+      xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
+      setXOption(xOpt);
     } else {
       setXOption(null);
     }
+
+    return { shuffled, xOpt };
   }, []);
 
-  // Start test
-  const handleStart = (formData) => {
+  // Start test (from welcome screen)
+  const handleStart = useCallback((formData) => {
     setForm(formData);
     setTestStep(0);
     setRepeatStep(0);
     if (config.tests.length > 0) {
-      setupIteration(config.tests[0]);
+      const { shuffled, xOpt } = setupIteration(config.tests[0]);
+      // Defer audio load slightly to ensure engine has created its context
+      setTimeout(() => loadIterationAudio(shuffled, xOpt), 50);
     }
-  };
+  }, [config, setupIteration, loadIterationAudio]);
 
   // Handle AB test submission
   const handleAbSubmit = (selectedOption) => {
     const newResults = JSON.parse(JSON.stringify(results));
-    const option = { ...selectedOption };
-    newResults[testStep].userSelections.push(option);
+    newResults[testStep].userSelections.push({ ...selectedOption });
     setResults(newResults);
-    nextStep(newResults);
+    advanceStep(newResults);
   };
 
   // Handle ABX test submission
@@ -151,22 +177,26 @@ export default function TestRunner({ configUrl }) {
       correctOption: { ...correctOption },
     });
     setResults(newResults);
-    nextStep(newResults);
+    advanceStep(newResults);
   };
 
   // Advance to next iteration or test
-  const nextStep = (updatedResults) => {
-    if (repeatStep + 1 < config.tests[testStep].repeat) {
-      // Next repeat
+  const advanceStep = (updatedResults) => {
+    const test = config.tests[testStep];
+
+    if (repeatStep + 1 < test.repeat) {
+      // Next repeat of same test
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      setupIteration(config.tests[testStep]);
+      const { shuffled, xOpt } = setupIteration(test);
+      setTimeout(() => loadIterationAudio(shuffled, xOpt), 0);
     } else if (testStep + 1 < config.tests.length) {
       // Next test
       const nextTest = testStep + 1;
       setTestStep(nextTest);
       setRepeatStep(0);
-      setupIteration(config.tests[nextTest]);
+      const { shuffled, xOpt } = setupIteration(config.tests[nextTest]);
+      setTimeout(() => loadIterationAudio(shuffled, xOpt), 0);
     } else {
       // Done — show results
       setTestStep(config.tests.length);
@@ -241,7 +271,7 @@ export default function TestRunner({ configUrl }) {
         stepStr={stepStr}
         options={currentOptions}
         engine={engine}
-        audioBuffers={currentAudioBuffers}
+        audioBuffers={currentBuffers}
         onSubmit={handleAbSubmit}
       />
     );
@@ -257,7 +287,7 @@ export default function TestRunner({ configUrl }) {
         options={currentOptions}
         xOption={xOption}
         engine={engine}
-        audioBuffers={currentAudioBuffers}
+        audioBuffers={currentBuffers}
         onSubmit={handleAbxSubmit}
       />
     );

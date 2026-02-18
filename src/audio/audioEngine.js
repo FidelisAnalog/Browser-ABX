@@ -99,10 +99,17 @@ export class AudioEngine {
       return this._playOffset;
     }
     // Playing — calculate current position
+    // _playOffset is the buffer position where playback started
+    // elapsed is wall-clock time since then
     const elapsed = this._context.currentTime - this._playStartTime;
     const loopDuration = this._loopEnd - this._loopStart;
-    if (loopDuration <= 0) return this._loopStart;
-    return this._loopStart + (elapsed % loopDuration);
+    if (loopDuration <= 0) return this._playOffset;
+
+    // Position = start offset + elapsed, wrapped within loop region
+    const rawPosition = this._playOffset + elapsed;
+    // How far past loop start (accounting for starting mid-loop)
+    const intoLoop = rawPosition - this._loopStart;
+    return this._loopStart + ((intoLoop % loopDuration) + loopDuration) % loopDuration;
   }
 
   /** @param {(state: TransportState) => void} cb */

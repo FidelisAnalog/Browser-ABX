@@ -1,20 +1,22 @@
 /**
  * React hook wrapping AudioEngine for component integration.
  * Manages engine lifecycle, state synchronization, and playhead animation.
+ *
+ * The engine is created once from pre-loaded audio data (decoded externally by TestRunner).
+ * Track buffers can be swapped via loadBuffers() without recreating the engine.
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioEngine } from './audioEngine';
-import { loadAndValidate, createAudioBuffer } from './audioLoader';
 
 /**
  * @param {object} options
- * @param {string[]} options.urls - Audio file URLs for this test
+ * @param {number|null} options.sampleRate - Source sample rate (from decoded audio), null if not yet loaded
  * @param {boolean} [options.duckingForced] - If true, ducking is locked on
  * @param {number} [options.duckDuration] - Duck duration in ms (default 5)
  * @returns {object} Engine state and control functions
  */
-export function useAudioEngine({ urls, duckingForced = false, duckDuration = 5 }) {
+export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration = 5 }) {
   const engineRef = useRef(null);
   const animFrameRef = useRef(null);
 
@@ -30,9 +32,6 @@ export function useAudioEngine({ urls, duckingForced = false, duckDuration = 5 }
   });
   const [duckingEnabled, setDuckingEnabledState] = useState(duckingForced);
   const [sampleRateInfo, setSampleRateInfo] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
-  const [error, setError] = useState(null);
 
   // Playhead animation loop
   const startAnimation = useCallback(() => {
@@ -52,67 +51,61 @@ export function useAudioEngine({ urls, duckingForced = false, duckDuration = 5 }
     }
   }, []);
 
-  // Initialize engine and load audio
+  // Create engine once when sampleRate is available
   useEffect(() => {
-    let cancelled = false;
+    if (!sampleRate) return;
 
-    async function init() {
-      try {
-        setLoading(true);
-        setError(null);
+    const engine = new AudioEngine(sampleRate);
+    engine.onStateChange = (state) => {
+      setTransportState(state);
+    };
 
-        // Decode all audio files
-        const { decoded, sampleRate, channels, sampleCount } = await loadAndValidate(
-          urls,
-          (loaded, total) => {
-            if (!cancelled) setLoadProgress({ loaded, total });
-          }
-        );
+    engine.setVolume(volume);
+    engine.setDucking(duckingForced || duckingEnabled);
+    engine.setDuckDuration(duckDuration / 1000);
 
-        if (cancelled) return;
-
-        // Create engine at source sample rate
-        const engine = new AudioEngine(sampleRate);
-        engine.onStateChange = (state) => {
-          if (!cancelled) setTransportState(state);
-        };
-
-        // Create AudioBuffers
-        const buffers = decoded.map((d) => createAudioBuffer(engine.context, d));
-        engine.loadBuffers(buffers);
-
-        // Apply initial settings
-        engine.setVolume(volume);
-        engine.setDucking(duckingForced || duckingEnabled);
-        engine.setDuckDuration(duckDuration / 1000);
-
-        engineRef.current = engine;
-
-        if (!cancelled) {
-          setSampleRateInfo(engine.sampleRateInfo);
-          setDuration(engine.duration);
-          setLoopRegion([0, engine.duration]);
-          setLoading(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.message);
-          setLoading(false);
-        }
-      }
-    }
-
-    init();
+    engineRef.current = engine;
+    setSampleRateInfo(engine.sampleRateInfo);
 
     return () => {
-      cancelled = true;
       stopAnimation();
-      if (engineRef.current) {
-        engineRef.current.destroy();
-        engineRef.current = null;
-      }
+      engine.destroy();
+      engineRef.current = null;
     };
-  }, [urls]); // Re-initialize only when URLs change
+  }, [sampleRate]); // Only recreate engine if sample rate changes
+
+  // Update ducking settings when forced/duration props change
+  useEffect(() => {
+    if (!engineRef.current) return;
+    engineRef.current.setDucking(duckingForced || duckingEnabled);
+    engineRef.current.setDuckDuration(duckDuration / 1000);
+  }, [duckingForced, duckDuration]);
+
+  /**
+   * Load AudioBuffers into the engine for the current test iteration.
+   * Stops any current playback and resets transport.
+   * @param {AudioBuffer[]} buffers
+   */
+  const loadBuffers = useCallback((buffers) => {
+    if (!engineRef.current) return;
+    stopAnimation();
+    engineRef.current.stop();
+    engineRef.current.loadBuffers(buffers);
+    const dur = engineRef.current.duration;
+    setDuration(dur);
+    setLoopRegion([0, dur]);
+    setCurrentTime(0);
+    setSelectedTrack(0);
+    setTransportState('stopped');
+  }, [stopAnimation]);
+
+  /**
+   * Get the AudioContext (needed to create AudioBuffers externally).
+   * @returns {AudioContext|null}
+   */
+  const getContext = useCallback(() => {
+    return engineRef.current?.context || null;
+  }, []);
 
   // Control functions
   const play = useCallback(() => {
@@ -194,9 +187,6 @@ export function useAudioEngine({ urls, duckingForced = false, duckDuration = 5 }
     duckingEnabled,
     duckingForced,
     sampleRateInfo,
-    loading,
-    loadProgress,
-    error,
 
     // Controls
     play,
@@ -209,5 +199,7 @@ export function useAudioEngine({ urls, duckingForced = false, duckDuration = 5 }
     setLoopEnd,
     setLoopRegion: setLoopRegionBoth,
     setDuckingEnabled,
+    loadBuffers,
+    getContext,
   };
 }
