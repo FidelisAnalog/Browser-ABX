@@ -254,9 +254,8 @@ const Waveform = React.memo(function Waveform({
         />
       </svg>
 
-      {/* Handle overlays — HTML divs outside SVG for reliable touch interaction */}
-      {!isFullRange && (
-        <div style={{
+      {/* Handle overlays — always rendered so handles are grabbable even at full range */}
+      <div style={{
           position: 'absolute',
           top: 0,
           left: 0,
@@ -296,7 +295,6 @@ const Waveform = React.memo(function Waveform({
             }}
           />
         </div>
-      )}
     </Box>
   );
 });
