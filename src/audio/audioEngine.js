@@ -325,6 +325,18 @@ export class AudioEngine {
         const dur = this._crossfadeDuration;
         const now = this._context.currentTime;
 
+        // Equal-power crossfade curves (cosine fade-out, sine fade-in).
+        // Maintains constant power through the transition, compensating for
+        // phase cancellation between correlated but not identical signals.
+        const steps = Math.max(2, Math.ceil(dur * this._context.sampleRate / 128));
+        const fadeOut = new Float32Array(steps);
+        const fadeIn = new Float32Array(steps);
+        for (let i = 0; i < steps; i++) {
+          const t = i / (steps - 1);
+          fadeOut[i] = Math.cos(t * Math.PI / 2);
+          fadeIn[i] = Math.sin(t * Math.PI / 2);
+        }
+
         // Fade out old source through a temporary gain node.
         // Connect new path before disconnecting old to avoid any gap.
         const oldSource = this._activeSource;
@@ -334,13 +346,13 @@ export class AudioEngine {
         oldGain.connect(this._gainNode);
         oldSource.connect(oldGain);
         try { oldSource.disconnect(oldDest); } catch { /* rapid switch — already rerouted */ }
-        oldGain.gain.linearRampToValueAtTime(0, now + dur);
+        oldGain.gain.setValueCurveAtTime(fadeOut, now, dur);
 
         // Fade in new source through a temporary gain node
         const newGain = this._context.createGain();
         newGain.gain.value = 0;
         newGain.connect(this._gainNode);
-        newGain.gain.linearRampToValueAtTime(1, now + dur);
+        newGain.gain.setValueCurveAtTime(fadeIn, now, dur);
         this._startSource(position, newGain);
 
         // Clean up after crossfade completes
