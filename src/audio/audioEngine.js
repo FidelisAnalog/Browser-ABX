@@ -41,6 +41,7 @@ export class AudioEngine {
     // State
     this._buffers = [];        // AudioBuffer per track
     this._activeSource = null; // Currently playing AudioBufferSourceNode
+    this._activeSourceDest = null; // Node the active source is connected to
     this._selectedTrack = 0;   // Index of selected A/B/X track
     this._transportState = 'stopped';
     this._playStartTime = 0;   // audioContext.currentTime when play started
@@ -317,12 +318,14 @@ export class AudioEngine {
         const dur = this._crossfadeDuration;
         const now = this._context.currentTime;
 
-        // Fade out old source through a temporary gain node
+        // Fade out old source through a temporary gain node.
+        // Connect new path before disconnecting old to avoid any gap.
         const oldSource = this._activeSource;
+        const oldDest = this._activeSourceDest;
         const oldGain = this._context.createGain();
-        oldSource.disconnect();
-        oldSource.connect(oldGain);
         oldGain.connect(this._gainNode);
+        oldSource.connect(oldGain);
+        try { oldSource.disconnect(oldDest); } catch { /* rapid switch — already rerouted */ }
         oldGain.gain.setValueAtTime(1, now);
         oldGain.gain.linearRampToValueAtTime(0, now + dur);
 
@@ -338,10 +341,11 @@ export class AudioEngine {
           oldGain.disconnect();
           try { oldSource.stop(); } catch { /* */ }
           oldSource.disconnect();
-          // Reconnect new source directly to _gainNode
-          if (this._activeSource) {
+          // Reconnect active source directly to _gainNode (skip temporary gain)
+          if (this._activeSource && this._activeSourceDest !== this._gainNode) {
             this._activeSource.disconnect();
             this._activeSource.connect(this._gainNode);
+            this._activeSourceDest = this._gainNode;
           }
           newGain.disconnect();
         }, dur * 1000);
@@ -482,16 +486,18 @@ export class AudioEngine {
     const buffer = this._buffers[this._selectedTrack];
     if (!buffer) return;
 
+    const dest = destinationNode || this._gainNode;
     const source = new AudioBufferSourceNode(this._context, {
       buffer,
       loop: true,
       loopStart: this._loopStart,
       loopEnd: this._loopEnd,
     });
-    source.connect(destinationNode || this._gainNode);
+    source.connect(dest);
     source.start(0, fromTime);
 
     this._activeSource = source;
+    this._activeSourceDest = dest;
     this._playStartTime = this._context.currentTime;
     this._playOffset = fromTime;
   }
@@ -503,6 +509,7 @@ export class AudioEngine {
     this._activeSource.disconnect();
     try { this._activeSource.stop(); } catch { /* */ }
     this._activeSource = null;
+    this._activeSourceDest = null;
   }
 
   _setTransportState(state) {
