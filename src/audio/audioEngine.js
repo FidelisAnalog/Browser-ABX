@@ -323,26 +323,24 @@ export class AudioEngine {
         }
 
         const dur = this._crossfadeDuration;
-        // Schedule automation events slightly in the future so they're
-        // guaranteed ahead of the audio thread clock (standard Web Audio practice)
-        const startAt = this._context.currentTime + 0.005;
+        const now = this._context.currentTime;
 
         // Fade out old source through a temporary gain node.
         // Connect new path before disconnecting old to avoid any gap.
         const oldSource = this._activeSource;
         const oldDest = this._activeSourceDest;
         const oldGain = this._context.createGain();
+        oldGain.gain.value = 1;
         oldGain.connect(this._gainNode);
         oldSource.connect(oldGain);
         try { oldSource.disconnect(oldDest); } catch { /* rapid switch — already rerouted */ }
-        oldGain.gain.setValueAtTime(1, startAt);
-        oldGain.gain.linearRampToValueAtTime(0, startAt + dur);
+        oldGain.gain.linearRampToValueAtTime(0, now + dur);
 
         // Fade in new source through a temporary gain node
         const newGain = this._context.createGain();
+        newGain.gain.value = 0;
         newGain.connect(this._gainNode);
-        newGain.gain.setValueAtTime(0, startAt);
-        newGain.gain.linearRampToValueAtTime(1, startAt + dur);
+        newGain.gain.linearRampToValueAtTime(1, now + dur);
         this._startSource(position, newGain);
 
         // Clean up after crossfade completes
