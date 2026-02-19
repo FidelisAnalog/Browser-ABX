@@ -82,21 +82,16 @@ export function chiSquaredPValue(x, df) {
 
 // --- Multinomial PMF ---
 
-function factorial(n) {
-  if (n <= 1) return 1;
-  let result = 1;
-  for (let i = 2; i <= n; i++) result *= i;
-  return result;
-}
-
 /**
  * Multinomial probability mass function.
- * Computes the probability of observing the given counts
+ * Computes the exact probability of observing the given counts
  * under the given probability distribution.
+ *
+ * P(X₁=x₁, ..., Xₖ=xₖ) = n! / (x₁!...xₖ!) × p₁^x₁ × ... × pₖ^xₖ
  *
  * @param {number[]} counts - Observed counts per category
  * @param {number|number[]} probabilities - Probability per category (or single value for uniform)
- * @returns {number} PMF value (used as p-value for the exact test)
+ * @returns {number} PMF value
  */
 export function multinomialPMF(counts, probabilities) {
   const n = counts.reduce((a, b) => a + b, 0);
@@ -107,40 +102,43 @@ export function multinomialPMF(counts, probabilities) {
     ? Array(k).fill(probabilities)
     : probabilities;
 
+  // Use log space to avoid overflow with large factorials
   let logP = logGamma(n + 1);
   for (let i = 0; i < k; i++) {
     logP -= logGamma(counts[i] + 1);
-    logP += counts[i] * Math.log(probs[i]);
+    if (probs[i] > 0 && counts[i] > 0) {
+      logP += counts[i] * Math.log(probs[i]);
+    } else if (probs[i] === 0 && counts[i] > 0) {
+      return 0; // impossible outcome
+    }
   }
 
-  // Sum over all outcomes at least as extreme
-  // For the listening test use case, we compute the probability
-  // of seeing results this uneven or more under the null hypothesis
+  return Math.exp(logP);
+}
+
+/**
+ * One-tailed binomial p-value: probability of getting `k` or more successes
+ * out of `n` trials with success probability `p`, by chance.
+ *
+ * Used for ABX tests where we want: P(correct >= observed | guessing).
+ *
+ * @param {number} k - Number of successes (correct answers)
+ * @param {number} n - Total number of trials
+ * @param {number} p - Probability of success under null hypothesis (e.g., 0.5 for 2-option ABX)
+ * @returns {number} p-value
+ */
+export function binomialPValue(k, n, p) {
+  if (n === 0) return 1;
+  if (k <= 0) return 1;
+
+  // Sum P(X >= k) = sum from i=k to n of C(n,i) * p^i * (1-p)^(n-i)
   let pValue = 0;
-  const thisP = Math.exp(logP);
-
-  // Enumerate all possible outcomes with the same n
-  function enumerate(remaining, depth, currentCounts) {
-    if (depth === k - 1) {
-      currentCounts[depth] = remaining;
-      let lp = logGamma(n + 1);
-      for (let i = 0; i < k; i++) {
-        lp -= logGamma(currentCounts[i] + 1);
-        lp += currentCounts[i] * Math.log(probs[i]);
-      }
-      const p = Math.exp(lp);
-      if (p <= thisP + 1e-10) {
-        pValue += p;
-      }
-      return;
-    }
-    for (let c = 0; c <= remaining; c++) {
-      currentCounts[depth] = c;
-      enumerate(remaining - c, depth + 1, currentCounts);
-    }
+  for (let i = k; i <= n; i++) {
+    const logProb = logGamma(n + 1) - logGamma(i + 1) - logGamma(n - i + 1)
+      + i * Math.log(p) + (n - i) * Math.log(1 - p);
+    pValue += Math.exp(logProb);
   }
 
-  enumerate(n, 0, new Array(k));
   return Math.min(1, pValue);
 }
 
@@ -215,10 +213,10 @@ export function computeAbxStats(name, optionNames, userSelectionsAndCorrects) {
   const total = userSelectionsAndCorrects.length;
   const nOptions = optionNames.length;
 
-  // p-value: probability of getting this many or more correct by chance
-  const countArray = [totalCorrect, totalIncorrect];
+  // p-value: one-tailed binomial test
+  // Probability of getting this many or more correct by random guessing
   const pValue = total > 0
-    ? multinomialPMF(countArray, [1 / nOptions, 1 - 1 / nOptions])
+    ? binomialPValue(totalCorrect, total, 1 / nOptions)
     : 1;
 
   return {
@@ -333,9 +331,8 @@ export function computeAbxTagStats(allTestStats, config) {
 
   return Object.values(groups).map((group) => {
     const nOptions = group.optionNames.length;
-    const countArray = [group.totalCorrect, group.totalIncorrect];
     const pValue = group.total > 0
-      ? multinomialPMF(countArray, [1 / nOptions, 1 - 1 / nOptions])
+      ? binomialPValue(group.totalCorrect, group.total, 1 / nOptions)
       : 1;
 
     return {

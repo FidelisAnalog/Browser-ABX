@@ -5,7 +5,7 @@
  */
 
 import { bytesToBase64, base64ToBytes } from './base64';
-import { multinomialPMF } from '../stats/statistics';
+import { multinomialPMF, binomialPValue } from '../stats/statistics';
 
 /**
  * Seeded PRNG (Mulberry32) for reproducible obfuscation.
@@ -150,7 +150,7 @@ export function decodeTestResults(dataStr, config) {
         totalCorrect,
         totalIncorrect,
         total: totalCorrect + totalIncorrect,
-        pValue: multinomialPMFFromCounts(totalCorrect, totalIncorrect, testOptionNames.length),
+        pValue: abxPValue(totalCorrect, totalIncorrect, testOptionNames.length),
       });
     } else {
       // AB test
@@ -182,6 +182,7 @@ export function decodeTestResults(dataStr, config) {
   return stats;
 }
 
-function multinomialPMFFromCounts(correct, incorrect, nOptions) {
-  return multinomialPMF([correct, incorrect], [1 / nOptions, 1 - 1 / nOptions]);
+function abxPValue(correct, incorrect, nOptions) {
+  const total = correct + incorrect;
+  return total > 0 ? binomialPValue(correct, total, 1 / nOptions) : 1;
 }
