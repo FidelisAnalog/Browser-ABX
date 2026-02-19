@@ -4,6 +4,10 @@
  *
  * The engine is created once from pre-loaded audio data (decoded externally by TestRunner).
  * Track buffers can be swapped via loadBuffers() without recreating the engine.
+ *
+ * Performance: playhead position is stored in a ref (not state) to avoid
+ * re-rendering the entire component tree at 60fps. The Playhead component
+ * reads from the ref directly and updates its own DOM element.
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
@@ -20,12 +24,16 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
   const engineRef = useRef(null);
   const animFrameRef = useRef(null);
 
-  // State exposed to React
+  // Playhead position as a ref — NOT state, to avoid 60fps re-renders
+  const currentTimeRef = useRef(0);
+
+  // State exposed to React (only things that actually need re-renders)
   const [transportState, setTransportState] = useState('stopped');
   const [selectedTrack, setSelectedTrack] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const durationRef = useRef(0);
   const [loopRegion, setLoopRegion] = useState([0, 0]);
+  const loopRegionRef = useRef([0, 0]);
   const [volume, setVolumeState] = useState(() => {
     const stored = localStorage.getItem('abx-volume');
     return stored !== null ? parseFloat(stored) : 0.5;
@@ -33,11 +41,11 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
   const [duckingEnabled, setDuckingEnabledState] = useState(duckingForced);
   const [sampleRateInfo, setSampleRateInfo] = useState(null);
 
-  // Playhead animation loop
+  // Playhead animation loop — writes to ref only, no setState
   const startAnimation = useCallback(() => {
     const animate = () => {
       if (engineRef.current) {
-        setCurrentTime(engineRef.current.currentTime);
+        currentTimeRef.current = engineRef.current.currentTime;
       }
       animFrameRef.current = requestAnimationFrame(animate);
     };
@@ -84,6 +92,7 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
   /**
    * Load AudioBuffers into the engine for the current test iteration.
    * Stops any current playback and resets transport.
+   * Preserves loop region if duration is unchanged (same test, new iteration).
    * @param {AudioBuffer[]} buffers
    */
   const loadBuffers = useCallback((buffers) => {
@@ -92,9 +101,22 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
     engineRef.current.stop();
     engineRef.current.loadBuffers(buffers);
     const dur = engineRef.current.duration;
+    const prevDur = durationRef.current;
+
     setDuration(dur);
-    setLoopRegion([0, dur]);
-    setCurrentTime(0);
+    durationRef.current = dur;
+
+    // Preserve loop region if duration is unchanged (same test, new iteration)
+    const prevLoop = loopRegionRef.current;
+    if (Math.abs(dur - prevDur) < 0.001 && prevLoop[1] > 0) {
+      engineRef.current.setLoopRegion(prevLoop[0], prevLoop[1]);
+    } else {
+      setLoopRegion([0, dur]);
+      loopRegionRef.current = [0, dur];
+      engineRef.current.setLoopRegion(0, dur);
+    }
+
+    currentTimeRef.current = engineRef.current.currentTime;
     setSelectedTrack(0);
     setTransportState('stopped');
   }, [stopAnimation]);
@@ -117,7 +139,7 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
     engineRef.current?.pause();
     stopAnimation();
     if (engineRef.current) {
-      setCurrentTime(engineRef.current.currentTime);
+      currentTimeRef.current = engineRef.current.currentTime;
     }
   }, [stopAnimation]);
 
@@ -125,14 +147,14 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
     engineRef.current?.stop();
     stopAnimation();
     if (engineRef.current) {
-      setCurrentTime(engineRef.current.currentTime);
+      currentTimeRef.current = engineRef.current.currentTime;
     }
   }, [stopAnimation]);
 
   const seek = useCallback((time) => {
     engineRef.current?.seek(time);
     if (engineRef.current) {
-      setCurrentTime(engineRef.current.currentTime);
+      currentTimeRef.current = engineRef.current.currentTime;
     }
   }, []);
 
@@ -152,22 +174,26 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
   }, []);
 
   const setLoopStart = useCallback((start) => {
-    const end = loopRegion[1];
+    const end = loopRegionRef.current[1];
     const clamped = Math.max(0, Math.min(start, end));
     engineRef.current?.setLoopRegion(clamped, end);
     setLoopRegion([clamped, end]);
-  }, [loopRegion]);
+    loopRegionRef.current = [clamped, end];
+  }, []);
 
   const setLoopEnd = useCallback((end) => {
-    const start = loopRegion[0];
-    const clamped = Math.max(start, Math.min(end, duration));
+    const start = loopRegionRef.current[0];
+    const dur = durationRef.current;
+    const clamped = Math.max(start, Math.min(end, dur));
     engineRef.current?.setLoopRegion(start, clamped);
     setLoopRegion([start, clamped]);
-  }, [loopRegion, duration]);
+    loopRegionRef.current = [start, clamped];
+  }, []);
 
   const setLoopRegionBoth = useCallback((start, end) => {
     engineRef.current?.setLoopRegion(start, end);
     setLoopRegion([start, end]);
+    loopRegionRef.current = [start, end];
   }, []);
 
   const setDuckingEnabled = useCallback((enabled) => {
@@ -180,7 +206,7 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
     // State
     transportState,
     selectedTrack,
-    currentTime,
+    currentTimeRef,  // ref, not value — read via .current
     duration,
     loopRegion,
     volume,

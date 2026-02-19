@@ -14,7 +14,7 @@ import DuckingToggle from './DuckingToggle';
  * @param {object} props
  * @param {Float32Array[]} props.channelData - Channel 0 data from each track
  * @param {number} props.duration - Total duration in seconds
- * @param {number} props.currentTime - Current playback position in seconds
+ * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
  * @param {[number, number]} props.loopRegion - [start, end] in seconds
  * @param {string} props.transportState - 'stopped' | 'playing' | 'paused'
  * @param {number} props.volume
@@ -31,7 +31,7 @@ import DuckingToggle from './DuckingToggle';
 export default function AudioControls({
   channelData,
   duration,
-  currentTime,
+  currentTimeRef,
   loopRegion,
   transportState,
   volume,
@@ -52,7 +52,7 @@ export default function AudioControls({
         <Waveform
           channelData={channelData}
           duration={duration}
-          currentTime={currentTime}
+          currentTimeRef={currentTimeRef}
           loopRegion={loopRegion}
           transportState={transportState}
           onSeek={onSeek}

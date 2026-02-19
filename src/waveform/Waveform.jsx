@@ -21,17 +21,16 @@ const WAVEFORM_BG = '#f5f5f5';
  * @param {object} props
  * @param {Float32Array[]} props.channelData - Channel 0 data from each track (for composite)
  * @param {number} props.duration - Total duration in seconds
- * @param {number} props.currentTime - Current playback position in seconds
+ * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
  * @param {[number, number]} props.loopRegion - [start, end] in seconds
  * @param {string} props.transportState - 'stopped' | 'playing' | 'paused'
  * @param {(time: number) => void} props.onSeek - Seek callback
  * @param {(start: number, end: number) => void} props.onLoopRegionChange - Loop region change callback
- * @param {number} [props.width] - Display width in pixels (default: auto from container)
  */
 export default function Waveform({
   channelData,
   duration,
-  currentTime,
+  currentTimeRef,
   loopRegion,
   transportState,
   onSeek,
@@ -156,7 +155,9 @@ export default function Waveform({
 
         {/* Playhead */}
         <Playhead
-          x={timeToX(currentTime)}
+          timeRef={currentTimeRef}
+          timeToX={timeToX}
+          playing={transportState === 'playing'}
           height={WAVEFORM_HEIGHT}
         />
 

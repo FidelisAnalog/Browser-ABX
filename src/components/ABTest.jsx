@@ -93,7 +93,7 @@ export default function ABTest({
           <AudioControls
             channelData={channelData}
             duration={engine.duration}
-            currentTime={engine.currentTime}
+            currentTimeRef={engine.currentTimeRef}
             loopRegion={engine.loopRegion}
             transportState={engine.transportState}
             volume={engine.volume}
