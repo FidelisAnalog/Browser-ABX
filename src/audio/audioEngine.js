@@ -65,7 +65,7 @@ export class AudioEngine {
     // Ducking
     this._duckingEnabled = false;
     this._duckingForced = false;
-    this._duckDuration = 0.005; // 5ms default
+    this._duckDuration = 0.05; // 50ms each way → 100ms total
 
     // Playhead animation — ref-like object, updated via rAF
     this._currentTimeRef = { current: 0 };
