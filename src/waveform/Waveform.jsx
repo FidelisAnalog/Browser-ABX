@@ -1,7 +1,11 @@
 /**
  * SVG waveform display component.
  * Renders a static composite waveform as a mirrored amplitude envelope.
- * Handles click-to-seek interaction on the waveform area.
+ * Handles click-to-seek and cursor drag interaction.
+ *
+ * Cursor drag uses HTML div overlays with the Pointer Events API
+ * (not SVG elements) so hit areas work reliably on touch devices
+ * including at the edges of the waveform.
  */
 
 import React, { useMemo, useRef, useCallback } from 'react';
@@ -16,6 +20,12 @@ const TIMELINE_HEIGHT = 20;
 const TOTAL_HEIGHT = WAVEFORM_HEIGHT + TIMELINE_HEIGHT;
 const WAVEFORM_COLOR = '#1976d2';
 const WAVEFORM_BG = '#f5f5f5';
+
+// Handle hit area: 44px total, biased outward from the loop region.
+// Start handle extends left, end handle extends right.
+const HIT_OUTWARD = 40;  // px extending away from loop region
+const HIT_INWARD = 4;    // px extending into loop region
+const MIN_LOOP = 0.5;    // minimum loop duration in seconds
 
 /**
  * @param {object} props
@@ -36,7 +46,17 @@ const Waveform = React.memo(function Waveform({
 }) {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
-  const dragActiveRef = useRef(false); // Shared with LoopRegion to suppress click-to-seek during drags
+  const dragActiveRef = useRef(false);
+  const draggingRef = useRef(null); // 'start' | 'end' | null
+  const containerRectRef = useRef(null);
+
+  // Refs so pointer handlers always read current values (no stale closures)
+  const loopRegionRef = useRef(loopRegion);
+  loopRegionRef.current = loopRegion;
+  const onChangeRef = useRef(onLoopRegionChange);
+  onChangeRef.current = onLoopRegionChange;
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
 
   // Measure container width
   const [containerWidth, setContainerWidth] = React.useState(600);
@@ -50,6 +70,9 @@ const Waveform = React.memo(function Waveform({
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
+
+  const widthRef = useRef(containerWidth);
+  widthRef.current = containerWidth;
 
   // Generate waveform data (recompute only when data or width changes)
   const waveformData = useMemo(
@@ -108,15 +131,77 @@ const Waveform = React.memo(function Waveform({
     [duration, containerWidth]
   );
 
+  // --- Pointer event drag handlers for cursor handles ---
+
+  const handlePointerDown = useCallback(
+    (handle) => (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.target.setPointerCapture(e.pointerId);
+      draggingRef.current = handle;
+      dragActiveRef.current = true;
+      containerRectRef.current = containerRef.current?.getBoundingClientRect();
+    },
+    []
+  );
+
+  const handlePointerMove = useCallback(
+    (e) => {
+      if (!draggingRef.current || !containerRectRef.current) return;
+      const x = e.clientX - containerRectRef.current.left;
+      const dur = durationRef.current;
+      const w = widthRef.current;
+      const time = Math.max(0, Math.min(w > 0 ? (x / w) * dur : 0, dur));
+      const region = loopRegionRef.current;
+      const onChange = onChangeRef.current;
+
+      if (draggingRef.current === 'start') {
+        let newStart = Math.max(0, time);
+        let newEnd = region[1];
+        // If start reaches end, push end along
+        if (newStart >= newEnd - MIN_LOOP) {
+          newStart = Math.min(newStart, dur - MIN_LOOP);
+          newEnd = Math.min(newStart + MIN_LOOP, dur);
+        }
+        onChange(newStart, newEnd);
+      } else {
+        let newStart = region[0];
+        let newEnd = Math.min(dur, time);
+        // If end reaches start, push start along
+        if (newEnd <= newStart + MIN_LOOP) {
+          newEnd = Math.max(newEnd, MIN_LOOP);
+          newStart = Math.max(newEnd - MIN_LOOP, 0);
+        }
+        onChange(newStart, newEnd);
+      }
+    },
+    []
+  );
+
+  const handlePointerUp = useCallback(
+    () => {
+      draggingRef.current = null;
+      // Clear drag flag after a microtask so the click event (which fires
+      // synchronously after pointerup) still sees dragActiveRef=true
+      setTimeout(() => { dragActiveRef.current = false; }, 0);
+    },
+    []
+  );
+
+  // Computed handle positions
+  const startX = timeToX(loopRegion[0]);
+  const endX = timeToX(loopRegion[1]);
+  const isFullRange = loopRegion[0] <= 0.001 && loopRegion[1] >= duration - 0.001;
+
   return (
     <Box
       ref={containerRef}
       sx={{
         width: '100%',
+        position: 'relative',
         userSelect: 'none',
         cursor: 'pointer',
         borderRadius: 1,
-        overflow: 'hidden',
         border: '1px solid #e0e0e0',
       }}
     >
@@ -130,19 +215,17 @@ const Waveform = React.memo(function Waveform({
         {/* Background */}
         <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={WAVEFORM_BG} />
 
-        {/* Loop region highlight */}
+        {/* Loop region visuals (shading, lines, triangles — no interaction) */}
         <LoopRegion
           loopRegion={loopRegion}
           duration={duration}
           width={containerWidth}
           height={WAVEFORM_HEIGHT}
-          onLoopRegionChange={onLoopRegionChange}
           timeToX={timeToX}
-          dragActiveRef={dragActiveRef}
         />
 
-        {/* Waveform — pointer-events: none so handle hit areas underneath receive touches */}
-        <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.7} style={{ pointerEvents: 'none' }} />
+        {/* Waveform */}
+        <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.7} />
 
         {/* Center line */}
         <line
@@ -152,7 +235,6 @@ const Waveform = React.memo(function Waveform({
           y2={WAVEFORM_HEIGHT / 2}
           stroke="#bdbdbd"
           strokeWidth={0.5}
-          style={{ pointerEvents: 'none' }}
         />
 
         {/* Playhead */}
@@ -170,6 +252,50 @@ const Waveform = React.memo(function Waveform({
           height={TIMELINE_HEIGHT}
         />
       </svg>
+
+      {/* Handle overlays — HTML divs outside SVG for reliable touch interaction */}
+      {!isFullRange && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: WAVEFORM_HEIGHT,
+          pointerEvents: 'none',
+          overflow: 'visible',
+        }}>
+          {/* Start handle hit area — biased left (outward) */}
+          <div
+            onPointerDown={handlePointerDown('start')}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            style={{
+              position: 'absolute',
+              left: startX - HIT_OUTWARD,
+              width: HIT_OUTWARD + HIT_INWARD,
+              height: '100%',
+              cursor: 'ew-resize',
+              touchAction: 'none',
+              pointerEvents: 'auto',
+            }}
+          />
+          {/* End handle hit area — biased right (outward) */}
+          <div
+            onPointerDown={handlePointerDown('end')}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            style={{
+              position: 'absolute',
+              left: endX - HIT_INWARD,
+              width: HIT_OUTWARD + HIT_INWARD,
+              height: '100%',
+              cursor: 'ew-resize',
+              touchAction: 'none',
+              pointerEvents: 'auto',
+            }}
+          />
+        </div>
+      )}
     </Box>
   );
 });
