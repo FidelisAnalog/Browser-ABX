@@ -159,6 +159,8 @@ export function useAudioEngine({ sampleRate, duckingForced = false, duckDuration
   }, []);
 
   const selectTrack = useCallback((index) => {
+    // Eagerly resume context on user gesture so play() is instant
+    engineRef.current?.resumeContext();
     engineRef.current?.selectTrack(index);
     setSelectedTrack(index);
   }, []);

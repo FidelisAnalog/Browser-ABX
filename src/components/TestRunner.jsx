@@ -156,8 +156,7 @@ export default function TestRunner({ configUrl }) {
     setRepeatStep(0);
     if (config.tests.length > 0) {
       const { shuffled, xOpt } = setupIteration(config.tests[0]);
-      // Defer audio load slightly to ensure engine has created its context
-      setTimeout(() => loadIterationAudio(shuffled, xOpt), 50);
+      loadIterationAudio(shuffled, xOpt);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -189,14 +188,14 @@ export default function TestRunner({ configUrl }) {
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
       const { shuffled, xOpt } = setupIteration(test);
-      setTimeout(() => loadIterationAudio(shuffled, xOpt), 0);
+      loadIterationAudio(shuffled, xOpt);
     } else if (testStep + 1 < config.tests.length) {
       // Next test
       const nextTest = testStep + 1;
       setTestStep(nextTest);
       setRepeatStep(0);
       const { shuffled, xOpt } = setupIteration(config.tests[nextTest]);
-      setTimeout(() => loadIterationAudio(shuffled, xOpt), 0);
+      loadIterationAudio(shuffled, xOpt);
     } else {
       // Done — show results
       setTestStep(config.tests.length);

@@ -23,16 +23,14 @@ const WAVEFORM_BG = '#f5f5f5';
  * @param {number} props.duration - Total duration in seconds
  * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
  * @param {[number, number]} props.loopRegion - [start, end] in seconds
- * @param {string} props.transportState - 'stopped' | 'playing' | 'paused'
  * @param {(time: number) => void} props.onSeek - Seek callback
  * @param {(start: number, end: number) => void} props.onLoopRegionChange - Loop region change callback
  */
-export default function Waveform({
+const Waveform = React.memo(function Waveform({
   channelData,
   duration,
   currentTimeRef,
   loopRegion,
-  transportState,
   onSeek,
   onLoopRegionChange,
 }) {
@@ -157,7 +155,6 @@ export default function Waveform({
         <Playhead
           timeRef={currentTimeRef}
           timeToX={timeToX}
-          playing={transportState === 'playing'}
           height={WAVEFORM_HEIGHT}
         />
 
@@ -171,4 +168,6 @@ export default function Waveform({
       </svg>
     </Box>
   );
-}
+});
+
+export default Waveform;

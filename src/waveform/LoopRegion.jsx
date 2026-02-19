@@ -20,7 +20,7 @@ const HANDLE_TRIANGLE_SIZE = 8;
  * @param {(start: number, end: number) => void} props.onLoopRegionChange
  * @param {(time: number) => number} props.timeToX - Convert time to x position
  */
-export default function LoopRegion({
+const LoopRegion = React.memo(function LoopRegion({
   loopRegion,
   duration,
   width,
@@ -186,4 +186,6 @@ export default function LoopRegion({
       </g>
     </g>
   );
-}
+});
+
+export default LoopRegion;

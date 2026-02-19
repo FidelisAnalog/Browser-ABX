@@ -54,7 +54,6 @@ export default function AudioControls({
           duration={duration}
           currentTimeRef={currentTimeRef}
           loopRegion={loopRegion}
-          transportState={transportState}
           onSeek={onSeek}
           onLoopRegionChange={onLoopRegionChange}
         />

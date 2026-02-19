@@ -56,6 +56,9 @@ export class AudioEngine {
 
     // Callbacks
     this._onStateChange = null;
+
+    // Context resume promise — resolved when context is running
+    this._resumePromise = null;
   }
 
   /** @returns {SampleRateInfo} */
@@ -205,23 +208,47 @@ export class AudioEngine {
   }
 
   /**
+   * Eagerly resume the AudioContext. Call on any user gesture
+   * (button click, track select) so the context is warm when play() is called.
+   * Safe to call multiple times — returns the same promise if already resuming.
+   * @returns {Promise<void>}
+   */
+  resumeContext() {
+    if (this._context.state === 'running') {
+      return Promise.resolve();
+    }
+    if (!this._resumePromise) {
+      this._resumePromise = this._context.resume().then(() => {
+        this._resumePromise = null;
+      });
+    }
+    return this._resumePromise;
+  }
+
+  /**
    * Play — start or resume playback.
+   * If the AudioContext is suspended, resumes it first then starts.
    */
   play() {
-    // Resume AudioContext if suspended (browser autoplay policy)
-    if (this._context.state === 'suspended') {
-      this._context.resume();
-    }
-
     if (this._buffers.length === 0) return;
-
     if (this._transportState === 'playing') return;
 
     const position =
       this._transportState === 'paused' ? this._playOffset : this._loopStart;
 
-    this._startSource(position);
-    this._setTransportState('playing');
+    if (this._context.state !== 'running') {
+      // Context suspended — resume then start
+      this._setTransportState('playing');
+      this.resumeContext().then(() => {
+        // Only start if we're still meant to be playing
+        if (this._transportState === 'playing') {
+          this._startSource(position);
+        }
+      });
+    } else {
+      this._startSource(position);
+      this._setTransportState('playing');
+    }
   }
 
   /**
