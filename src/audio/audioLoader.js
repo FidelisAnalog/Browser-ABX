@@ -27,7 +27,7 @@ export async function fetchAndDecode(url) {
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { cache: 'no-store' });
       if (!response.ok) {
         throw new Error(`Failed to fetch audio: ${url} (${response.status} ${response.statusText})`);
       }
