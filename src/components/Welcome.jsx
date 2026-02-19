@@ -43,7 +43,7 @@ export default function Welcome({ description, form, initialized, onStart }) {
 
   return (
     <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
-      <Container maxWidth="sm">
+      <Container maxWidth="md">
         <Paper>
           <Box p={3}>
             {description && (

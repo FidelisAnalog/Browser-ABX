@@ -20,6 +20,8 @@ import { useSelectedTrack } from '../audio/useEngineState';
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform (from TestRunner)
  * @param {boolean} props.crossfadeForced
+ * @param {number} props.totalIterations - Total number of iterations for this test
+ * @param {object[]} props.iterationResults - Array of {selectedOption, correctOption} for completed iterations
  * @param {(selectedOption: object, correctOption: object) => void} props.onSubmit
  */
 export default function ABXTest({
@@ -31,6 +33,8 @@ export default function ABXTest({
   engine,
   channelData,
   crossfadeForced,
+  totalIterations,
+  iterationResults = [],
   onSubmit,
 }) {
   const trackCount = options.length + 1; // options + X
@@ -72,7 +76,7 @@ export default function ABXTest({
 
   return (
     <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
-      <Container maxWidth="sm">
+      <Container maxWidth="md">
         <Box display="flex" flexDirection="column" gap={1.5}>
           {/* Test info */}
           <Paper>
@@ -114,6 +118,34 @@ export default function ABXTest({
                   X is {getAnswerLabel()}
                 </Button>
               </Box>
+            </Box>
+
+            {/* Iteration progress bar */}
+            <Box
+              display="flex"
+              gap="3px"
+              sx={{ px: 2.5, pb: 1.5 }}
+            >
+              {Array.from({ length: totalIterations }, (_, i) => {
+                let color = '#e0e0e0'; // grey — not yet attempted
+                if (i < iterationResults.length) {
+                  const r = iterationResults[i];
+                  color = r.selectedOption.audioUrl === r.correctOption.audioUrl
+                    ? '#4caf50'   // green — correct
+                    : '#f44336';  // red — incorrect
+                }
+                return (
+                  <Box
+                    key={i}
+                    sx={{
+                      flex: 1,
+                      height: 6,
+                      borderRadius: 1,
+                      backgroundColor: color,
+                    }}
+                  />
+                );
+              })}
             </Box>
           </Paper>
 

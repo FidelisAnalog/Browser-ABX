@@ -9,7 +9,7 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 export default function LandingPage() {
   return (
     <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={4} pb={4}>
-      <Container maxWidth="sm">
+      <Container maxWidth="md">
         <Paper>
           <Box p={4} textAlign="center">
             <Typography variant="h3" gutterBottom>

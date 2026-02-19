@@ -246,7 +246,7 @@ export default function TestRunner({ configUrl }) {
   if (configError) {
     return (
       <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={4}>
-        <Container maxWidth="sm">
+        <Container maxWidth="md">
           <Typography color="error" variant="h6">Error</Typography>
           <Typography>{configError}</Typography>
         </Container>
@@ -267,7 +267,7 @@ export default function TestRunner({ configUrl }) {
     return (
       <>
         {engine && (
-          <Container maxWidth="sm" sx={{ pt: 2 }}>
+          <Container maxWidth="md" sx={{ pt: 2 }}>
             <SampleRateInfo info={engine.getSampleRateInfo()} />
           </Container>
         )}
@@ -285,7 +285,7 @@ export default function TestRunner({ configUrl }) {
   if (testStep >= config.tests.length) {
     return (
       <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
-        <Container maxWidth="sm">
+        <Container maxWidth="md">
           <Results
             description={config.results?.description}
             results={results}
@@ -329,6 +329,8 @@ export default function TestRunner({ configUrl }) {
         engine={engine}
         channelData={testChannelData}
         crossfadeForced={crossfadeForced}
+        totalIterations={test.repeat}
+        iterationResults={results[testStep].userSelectionsAndCorrects}
         onSubmit={handleAbxSubmit}
       />
     );

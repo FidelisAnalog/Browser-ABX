@@ -42,7 +42,7 @@ export default function ABTest({
 
   return (
     <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
-      <Container maxWidth="sm">
+      <Container maxWidth="md">
         <Box display="flex" flexDirection="column" gap={1.5}>
           {/* Test info */}
           <Paper>

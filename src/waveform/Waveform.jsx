@@ -15,8 +15,8 @@ import LoopRegion from './LoopRegion';
 import Playhead from './Playhead';
 import Timeline from './Timeline';
 
-const WAVEFORM_HEIGHT = 100;
-const TIMELINE_HEIGHT = 20;
+const WAVEFORM_HEIGHT = 120;
+const TIMELINE_HEIGHT = 24;
 const TOTAL_HEIGHT = WAVEFORM_HEIGHT + TIMELINE_HEIGHT;
 const WAVEFORM_COLOR = '#1976d2';
 const WAVEFORM_BG = '#f5f5f5';

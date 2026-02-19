@@ -31,7 +31,7 @@ export default function SharedResults({ configUrl, resultsParam }) {
   if (error) {
     return (
       <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={4}>
-        <Container maxWidth="sm">
+        <Container maxWidth="md">
           <Typography color="error" variant="h6">Error</Typography>
           <Typography>{error}</Typography>
         </Container>
@@ -49,7 +49,7 @@ export default function SharedResults({ configUrl, resultsParam }) {
 
   return (
     <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
-      <Container maxWidth="sm">
+      <Container maxWidth="md">
         <Results
           description={config.results?.description}
           results={[]}
