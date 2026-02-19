@@ -9,7 +9,8 @@ import Waveform from '../waveform/Waveform';
 import TransportControls from './TransportControls';
 import VolumeSlider from './VolumeSlider';
 import DuckingToggle from './DuckingToggle';
-import { useDuration, useLoopRegion } from '../audio/useEngineState';
+import ReplayIcon from '@mui/icons-material/Replay';
+import { useDuration, useLoopRegion, useTransportState } from '../audio/useEngineState';
 
 /**
  * @param {object} props
@@ -20,6 +21,7 @@ import { useDuration, useLoopRegion } from '../audio/useEngineState';
 export default function AudioControls({ engine, channelData, duckingForced }) {
   const duration = useDuration(engine);
   const loopRegion = useLoopRegion(engine);
+  const transportState = useTransportState(engine);
 
   const onSeek = useCallback((t) => engine?.seek(t), [engine]);
   const onLoopRegionChange = useCallback((s, e) => engine?.setLoopRegion(s, e), [engine]);
@@ -38,6 +40,12 @@ export default function AudioControls({ engine, channelData, duckingForced }) {
     if (!engine || duration <= 0) return;
     engine.setLoopRegion(0, duration);
   }, [engine, duration]);
+
+  const handleJumpBack = useCallback(() => {
+    if (!engine) return;
+    const pos = engine.currentTime;
+    engine.seek(Math.max(loopRegion[0], pos - 2));
+  }, [engine, loopRegion]);
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
@@ -65,6 +73,17 @@ export default function AudioControls({ engine, channelData, duckingForced }) {
         {/* Left: Transport + bracket controls */}
         <Box display="flex" alignItems="center" gap={0.5}>
           <TransportControls engine={engine} />
+          <Tooltip title="Jump back 2s">
+            <span>
+              <IconButton
+                onClick={handleJumpBack}
+                disabled={transportState === 'stopped'}
+                size="medium"
+              >
+                <ReplayIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
           <Tooltip title="Bracket ±2s around playhead">
             <span>
               <IconButton
