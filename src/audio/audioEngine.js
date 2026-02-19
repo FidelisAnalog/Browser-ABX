@@ -215,6 +215,35 @@ export class AudioEngine {
       this._activeSource.loopStart = start;
       this._activeSource.loopEnd = end;
     }
+
+    // Keep playhead coherent with new loop boundaries
+    if (this._transportState === 'stopped') {
+      this._playOffset = start;
+      this._currentTimeRef.current = start;
+    } else if (this._transportState === 'paused') {
+      if (this._playOffset >= end) {
+        // End cursor passed playhead — wrap to loop start
+        this._playOffset = start;
+        this._currentTimeRef.current = start;
+      } else if (this._playOffset < start) {
+        // Start cursor passed playhead — push it along
+        this._playOffset = start;
+        this._currentTimeRef.current = start;
+      }
+    } else if (this._transportState === 'playing') {
+      const pos = this.currentTime;
+      if (pos < start || pos >= end) {
+        // Position outside new bounds — seamless seek to loop start
+        const oldSource = this._activeSource;
+        this._activeSource = null;
+        this._startSource(start);
+        if (oldSource) {
+          oldSource.disconnect();
+          try { oldSource.stop(); } catch { /* */ }
+        }
+      }
+    }
+
     this._notify();
   }
 
