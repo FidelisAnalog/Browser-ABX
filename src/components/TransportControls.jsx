@@ -1,5 +1,6 @@
 /**
  * Transport controls — Play, Pause, Stop buttons.
+ * Subscribes to transportState only — does not re-render on volume/track/loop changes.
  */
 
 import React from 'react';
@@ -7,29 +8,23 @@ import { Box, IconButton, Tooltip } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
+import { useTransportState } from '../audio/useEngineState';
 
 /**
  * @param {object} props
- * @param {string} props.transportState - 'stopped' | 'playing' | 'paused'
- * @param {() => void} props.onPlay
- * @param {() => void} props.onPause
- * @param {() => void} props.onStop
+ * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {boolean} [props.disabled]
  */
-export default function TransportControls({
-  transportState,
-  onPlay,
-  onPause,
-  onStop,
-  disabled = false,
-}) {
+export default function TransportControls({ engine, disabled = false }) {
+  const transportState = useTransportState(engine);
+
   return (
     <Box display="flex" flexDirection="row" alignItems="center" gap={0.5}>
       {transportState === 'playing' ? (
         <Tooltip title="Pause">
           <span>
             <IconButton
-              onClick={onPause}
+              onClick={() => engine?.pause()}
               disabled={disabled}
               color="primary"
               size="medium"
@@ -42,7 +37,7 @@ export default function TransportControls({
         <Tooltip title="Play">
           <span>
             <IconButton
-              onClick={onPlay}
+              onClick={() => engine?.play()}
               disabled={disabled}
               color="primary"
               size="medium"
@@ -55,7 +50,7 @@ export default function TransportControls({
       <Tooltip title="Stop">
         <span>
           <IconButton
-            onClick={onStop}
+            onClick={() => engine?.stop()}
             disabled={disabled || transportState === 'stopped'}
             size="medium"
           >

@@ -9,6 +9,7 @@ import { Box, Button, Container, Divider, Paper, Typography } from '@mui/materia
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { extractChannel0 } from '../waveform/generateWaveform';
+import { useSelectedTrack } from '../audio/useEngineState';
 
 /**
  * @param {object} props
@@ -16,8 +17,9 @@ import { extractChannel0 } from '../waveform/generateWaveform';
  * @param {string} [props.description] - Test instructions
  * @param {string} props.stepStr - e.g., "3/10"
  * @param {object[]} props.options - Shuffled option objects
- * @param {object} props.engine - useAudioEngine return value
+ * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {AudioBuffer[]} props.audioBuffers - AudioBuffers in option order
+ * @param {boolean} props.duckingForced
  * @param {(selectedOption: object) => void} props.onSubmit
  */
 export default function ABTest({
@@ -27,6 +29,7 @@ export default function ABTest({
   options,
   engine,
   audioBuffers,
+  duckingForced,
   onSubmit,
 }) {
   const channelData = useMemo(
@@ -34,14 +37,13 @@ export default function ABTest({
     [audioBuffers]
   );
 
-  const selectedLabel = engine.selectedTrack !== null
-    ? String.fromCharCode(65 + engine.selectedTrack)
-    : '?';
+  const selectedTrack = useSelectedTrack(engine);
+
+  const selectedLabel = String.fromCharCode(65 + selectedTrack);
 
   const handleSubmit = () => {
-    if (engine.selectedTrack === null) return;
-    engine.stop();
-    onSubmit(options[engine.selectedTrack]);
+    engine?.stop();
+    onSubmit(options[selectedTrack]);
   };
 
   return (
@@ -71,8 +73,8 @@ export default function ABTest({
               {/* Track selector */}
               <TrackSelector
                 trackCount={options.length}
-                selectedTrack={engine.selectedTrack}
-                onSelect={engine.selectTrack}
+                selectedTrack={selectedTrack}
+                onSelect={(i) => engine?.selectTrack(i)}
               />
 
               {/* Submit */}
@@ -81,7 +83,6 @@ export default function ABTest({
                   variant="outlined"
                   color="primary"
                   onClick={handleSubmit}
-                  disabled={engine.selectedTrack === null}
                 >
                   Select {selectedLabel}
                 </Button>
@@ -91,21 +92,9 @@ export default function ABTest({
 
           {/* Audio controls */}
           <AudioControls
+            engine={engine}
             channelData={channelData}
-            duration={engine.duration}
-            currentTimeRef={engine.currentTimeRef}
-            loopRegion={engine.loopRegion}
-            transportState={engine.transportState}
-            volume={engine.volume}
-            duckingEnabled={engine.duckingEnabled}
-            duckingForced={engine.duckingForced}
-            onPlay={engine.play}
-            onPause={engine.pause}
-            onStop={engine.stop}
-            onSeek={engine.seek}
-            onLoopRegionChange={engine.setLoopRegion}
-            onVolumeChange={engine.setVolume}
-            onDuckingChange={engine.setDuckingEnabled}
+            duckingForced={duckingForced}
           />
         </Box>
       </Container>

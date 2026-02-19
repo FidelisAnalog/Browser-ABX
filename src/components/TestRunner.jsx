@@ -13,7 +13,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Box, CircularProgress, Container, Typography } from '@mui/material';
 import { parseConfig } from '../utils/config';
 import { loadAndValidate, createAudioBuffer } from '../audio/audioLoader';
-import { useAudioEngine } from '../audio/useAudioEngine';
+import { AudioEngine } from '../audio/audioEngine';
 import { shuffle } from '../utils/shuffle';
 import Welcome from './Welcome';
 import ABTest from './ABTest';
@@ -53,12 +53,29 @@ export default function TestRunner({ configUrl }) {
     ? config.tests[testStep]
     : null;
 
-  // Create audio engine once when sample rate is known
-  const engine = useAudioEngine({
-    sampleRate: audioSampleRate,
-    duckingForced: currentTest?.ducking || false,
-    duckDuration: currentTest?.duckDuration || 5,
-  });
+  // Create engine once when sample rate is known (synchronous, deterministic)
+  const engineRef = useRef(null);
+  if (audioSampleRate && !engineRef.current) {
+    engineRef.current = new AudioEngine(audioSampleRate);
+  }
+  const engine = engineRef.current;
+
+  // Cleanup engine on unmount
+  useEffect(() => {
+    return () => {
+      if (engineRef.current) {
+        engineRef.current.destroy();
+        engineRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update ducking config when test changes
+  useEffect(() => {
+    if (!engine) return;
+    engine.setDuckingForced(currentTest?.ducking || false);
+    engine.setDuckDuration((currentTest?.duckDuration || 5) / 1000);
+  }, [engine, currentTest]);
 
   // Load config
   useEffect(() => {
@@ -114,8 +131,8 @@ export default function TestRunner({ configUrl }) {
    * Build AudioBuffers for a set of options (+ optional X) and load into engine.
    */
   const loadIterationAudio = useCallback((options, xOpt) => {
-    const ctx = engine.getContext();
-    if (!ctx) return;
+    if (!engineRef.current) return;
+    const ctx = engineRef.current.context;
 
     const cache = decodedCacheRef.current;
     const buffers = options.map((opt) => {
@@ -129,8 +146,8 @@ export default function TestRunner({ configUrl }) {
     }
 
     setCurrentBuffers(buffers);
-    engine.loadBuffers(buffers);
-  }, [engine]);
+    engineRef.current.loadBuffers(buffers);
+  }, []);
 
   // Setup test iteration (shuffle options, pick X for ABX)
   const setupIteration = useCallback((test) => {
@@ -227,9 +244,9 @@ export default function TestRunner({ configUrl }) {
   if (testStep === -1) {
     return (
       <>
-        {engine.sampleRateInfo && (
+        {engine && (
           <Container maxWidth="sm" sx={{ pt: 2 }}>
-            <SampleRateInfo info={engine.sampleRateInfo} />
+            <SampleRateInfo info={engine.getSampleRateInfo()} />
           </Container>
         )}
         <Welcome
@@ -260,6 +277,7 @@ export default function TestRunner({ configUrl }) {
   // Test screens
   const test = config.tests[testStep];
   const stepStr = `${repeatStep + 1}/${test.repeat}`;
+  const duckingForced = currentTest?.ducking || false;
 
   if (test.testType.toLowerCase() === 'ab') {
     return (
@@ -271,6 +289,7 @@ export default function TestRunner({ configUrl }) {
         options={currentOptions}
         engine={engine}
         audioBuffers={currentBuffers}
+        duckingForced={duckingForced}
         onSubmit={handleAbSubmit}
       />
     );
@@ -287,6 +306,7 @@ export default function TestRunner({ configUrl }) {
         xOption={xOption}
         engine={engine}
         audioBuffers={currentBuffers}
+        duckingForced={duckingForced}
         onSubmit={handleAbxSubmit}
       />
     );

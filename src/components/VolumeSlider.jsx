@@ -1,20 +1,23 @@
 /**
  * Volume slider control.
+ * Subscribes to volume only — does not re-render on transport/track/loop changes.
  */
 
 import React from 'react';
 import { Box, Slider } from '@mui/material';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
+import { useVolume } from '../audio/useEngineState';
 
 /**
  * @param {object} props
- * @param {number} props.volume - Current volume (0.0 to 1.0)
- * @param {(volume: number) => void} props.onChange
+ * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  */
-export default function VolumeSlider({ volume, onChange }) {
+export default function VolumeSlider({ engine }) {
+  const volume = useVolume(engine);
+
   const handleChange = (event, newValue) => {
-    onChange(newValue);
+    engine?.setVolume(newValue);
   };
 
   return (

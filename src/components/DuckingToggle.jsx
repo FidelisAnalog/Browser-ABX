@@ -1,18 +1,21 @@
 /**
  * Ducking toggle — enables/disables audio ducking on track switches.
- * Hidden or locked when ducking is forced via config.
+ * Shows locked state when ducking is forced via config.
+ * Subscribes to duckingEnabled only.
  */
 
 import React from 'react';
 import { Box, FormControlLabel, Switch, Tooltip, Typography } from '@mui/material';
+import { useDuckingEnabled } from '../audio/useEngineState';
 
 /**
  * @param {object} props
- * @param {boolean} props.enabled - Whether ducking is on
+ * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {boolean} props.forced - Whether ducking is forced by config (toggle locked)
- * @param {(enabled: boolean) => void} props.onChange
  */
-export default function DuckingToggle({ enabled, forced, onChange }) {
+export default function DuckingToggle({ engine, forced }) {
+  const enabled = useDuckingEnabled(engine);
+
   if (forced) {
     return (
       <Tooltip title="Audio ducking is required for this test to mask track switching artifacts">
@@ -30,7 +33,7 @@ export default function DuckingToggle({ enabled, forced, onChange }) {
       control={
         <Switch
           checked={enabled}
-          onChange={(e) => onChange(e.target.checked)}
+          onChange={(e) => engine?.setDucking(e.target.checked)}
           size="small"
         />
       }

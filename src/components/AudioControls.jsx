@@ -3,48 +3,27 @@
  * volume slider, and ducking toggle into a single audio control panel.
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Box, Paper } from '@mui/material';
 import Waveform from '../waveform/Waveform';
 import TransportControls from './TransportControls';
 import VolumeSlider from './VolumeSlider';
 import DuckingToggle from './DuckingToggle';
+import { useDuration, useLoopRegion } from '../audio/useEngineState';
 
 /**
  * @param {object} props
+ * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Channel 0 data from each track
- * @param {number} props.duration - Total duration in seconds
- * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
- * @param {[number, number]} props.loopRegion - [start, end] in seconds
- * @param {string} props.transportState - 'stopped' | 'playing' | 'paused'
- * @param {number} props.volume
- * @param {boolean} props.duckingEnabled
  * @param {boolean} props.duckingForced
- * @param {() => void} props.onPlay
- * @param {() => void} props.onPause
- * @param {() => void} props.onStop
- * @param {(time: number) => void} props.onSeek
- * @param {(start: number, end: number) => void} props.onLoopRegionChange
- * @param {(volume: number) => void} props.onVolumeChange
- * @param {(enabled: boolean) => void} props.onDuckingChange
  */
-export default function AudioControls({
-  channelData,
-  duration,
-  currentTimeRef,
-  loopRegion,
-  transportState,
-  volume,
-  duckingEnabled,
-  duckingForced,
-  onPlay,
-  onPause,
-  onStop,
-  onSeek,
-  onLoopRegionChange,
-  onVolumeChange,
-  onDuckingChange,
-}) {
+export default function AudioControls({ engine, channelData, duckingForced }) {
+  const duration = useDuration(engine);
+  const loopRegion = useLoopRegion(engine);
+
+  const onSeek = useCallback((t) => engine?.seek(t), [engine]);
+  const onLoopRegionChange = useCallback((s, e) => engine?.setLoopRegion(s, e), [engine]);
+
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
       {/* Waveform */}
@@ -52,7 +31,7 @@ export default function AudioControls({
         <Waveform
           channelData={channelData}
           duration={duration}
-          currentTimeRef={currentTimeRef}
+          currentTimeRef={engine?.currentTimeRef}
           loopRegion={loopRegion}
           onSeek={onSeek}
           onLoopRegionChange={onLoopRegionChange}
@@ -69,23 +48,14 @@ export default function AudioControls({
         gap={1}
       >
         {/* Left: Transport */}
-        <TransportControls
-          transportState={transportState}
-          onPlay={onPlay}
-          onPause={onPause}
-          onStop={onStop}
-        />
+        <TransportControls engine={engine} />
 
         {/* Center: Ducking toggle */}
-        <DuckingToggle
-          enabled={duckingEnabled}
-          forced={duckingForced}
-          onChange={onDuckingChange}
-        />
+        <DuckingToggle engine={engine} forced={duckingForced} />
 
         {/* Right: Volume */}
         <Box sx={{ minWidth: 140, maxWidth: 200 }}>
-          <VolumeSlider volume={volume} onChange={onVolumeChange} />
+          <VolumeSlider engine={engine} />
         </Box>
       </Box>
     </Paper>

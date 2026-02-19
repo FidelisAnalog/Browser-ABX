@@ -9,6 +9,7 @@ import { Box, Button, Container, Divider, Paper, Typography } from '@mui/materia
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { extractChannel0 } from '../waveform/generateWaveform';
+import { useSelectedTrack } from '../audio/useEngineState';
 
 /**
  * @param {object} props
@@ -17,8 +18,9 @@ import { extractChannel0 } from '../waveform/generateWaveform';
  * @param {string} props.stepStr - e.g., "3/10"
  * @param {object[]} props.options - Original (non-X) options in shuffled order
  * @param {object} props.xOption - The X option (has audioUrl matching one of the options)
- * @param {object} props.engine - useAudioEngine return value
+ * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {AudioBuffer[]} props.audioBuffers - AudioBuffers: [option0, option1, ..., X]
+ * @param {boolean} props.duckingForced
  * @param {(selectedOption: object, correctOption: object) => void} props.onSubmit
  */
 export default function ABXTest({
@@ -29,6 +31,7 @@ export default function ABXTest({
   xOption,
   engine,
   audioBuffers,
+  duckingForced,
   onSubmit,
 }) {
   const channelData = useMemo(
@@ -39,11 +42,13 @@ export default function ABXTest({
   const trackCount = options.length + 1; // options + X
   const xTrackIndex = trackCount - 1;    // X is always last
 
+  const selectedTrack = useSelectedTrack(engine);
+
   // The user's answer: which non-X option they think X matches
   const [answer, setAnswer] = useState(null);
 
   const handleTrackSelect = (index) => {
-    engine.selectTrack(index);
+    engine?.selectTrack(index);
     // If they selected a non-X track, that's their answer
     if (index !== xTrackIndex) {
       setAnswer(index);
@@ -57,7 +62,7 @@ export default function ABXTest({
 
   const handleSubmit = () => {
     if (answer === null) return;
-    engine.stop();
+    engine?.stop();
 
     // Find the correct option (the one whose audioUrl matches X)
     const correctOption = options.find(
@@ -97,7 +102,7 @@ export default function ABXTest({
               {/* Track selector with X */}
               <TrackSelector
                 trackCount={trackCount}
-                selectedTrack={engine.selectedTrack}
+                selectedTrack={selectedTrack}
                 onSelect={handleTrackSelect}
                 xTrackIndex={xTrackIndex}
               />
@@ -119,21 +124,9 @@ export default function ABXTest({
 
           {/* Audio controls */}
           <AudioControls
+            engine={engine}
             channelData={channelData}
-            duration={engine.duration}
-            currentTimeRef={engine.currentTimeRef}
-            loopRegion={engine.loopRegion}
-            transportState={engine.transportState}
-            volume={engine.volume}
-            duckingEnabled={engine.duckingEnabled}
-            duckingForced={engine.duckingForced}
-            onPlay={engine.play}
-            onPause={engine.pause}
-            onStop={engine.stop}
-            onSeek={engine.seek}
-            onLoopRegionChange={engine.setLoopRegion}
-            onVolumeChange={engine.setVolume}
-            onDuckingChange={engine.setDuckingEnabled}
+            duckingForced={duckingForced}
           />
         </Box>
       </Container>
