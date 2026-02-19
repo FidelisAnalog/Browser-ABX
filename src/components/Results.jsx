@@ -30,7 +30,7 @@ export default function Results({ description, results, config, precomputedStats
 
   const { abStats, abxStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
     if (precomputedStats) {
-      const ab = precomputedStats.filter((s) => !s.matrix && !s.totalCorrect !== undefined);
+      const ab = precomputedStats.filter((s) => s.options !== undefined);
       const abx = precomputedStats.filter((s) => s.totalCorrect !== undefined);
       return {
         abStats: ab,

@@ -96,7 +96,7 @@ export function encodeTestResults(allTestStats, config) {
     bytes[i] = (bytes[i] + mask[i - 1]) & 0xff;
   }
 
-  return encodeURIComponent(bytesToBase64(new Uint8Array(bytes)));
+  return bytesToBase64(new Uint8Array(bytes));
 }
 
 /**
@@ -106,7 +106,7 @@ export function encodeTestResults(allTestStats, config) {
  * @returns {object[]} Decoded stats
  */
 export function decodeTestResults(dataStr, config) {
-  const decoded = base64ToBytes(decodeURIComponent(dataStr));
+  const decoded = base64ToBytes(dataStr);
   const bytes = Array.from(decoded);
 
   if (bytes.length === 0) return [];

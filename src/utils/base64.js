@@ -1,9 +1,10 @@
 /**
- * Base64 encoding/decoding for binary data.
- * Standard RFC 4648 implementation.
+ * Base64url encoding/decoding for binary data.
+ * RFC 4648 §5 URL-safe variant (- and _ instead of + and /).
+ * Safe to use directly in URL query parameters without percent-encoding.
  */
 
-const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 /**
  * Encode Uint8Array to base64 string.
