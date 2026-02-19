@@ -73,7 +73,7 @@ export default function AudioControls({ engine, channelData, duckingForced }) {
                 size="medium"
                 sx={{ fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1.1rem', px: 0.5, minWidth: 36 }}
               >
-                [ ]
+                []
               </IconButton>
             </span>
           </Tooltip>
@@ -85,7 +85,7 @@ export default function AudioControls({ engine, channelData, duckingForced }) {
                 size="medium"
                 sx={{ fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1.1rem', px: 0.5, minWidth: 36 }}
               >
-                ] [
+                ][
               </IconButton>
             </span>
           </Tooltip>

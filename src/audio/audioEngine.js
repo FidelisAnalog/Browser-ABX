@@ -215,6 +215,10 @@ export class AudioEngine {
     if (this._loopRegionSnapshot[0] === start && this._loopRegionSnapshot[1] === end) {
       return;
     }
+
+    // Capture position BEFORE updating boundaries so modulo wraps against old loop range
+    const playingPos = this._transportState === 'playing' ? this.currentTime : null;
+
     this._loopStart = start;
     this._loopEnd = end;
     this._loopRegionSnapshot = [start, end];
@@ -242,8 +246,7 @@ export class AudioEngine {
       // Always create a fresh source with new loop boundaries.
       // We can't reliably track the Web Audio API's internal loop position,
       // so a fresh source resyncs our tracking with actual audio.
-      const pos = this.currentTime;
-      const resumeAt = (pos >= start && pos < end) ? pos : start;
+      const resumeAt = (playingPos >= start && playingPos < end) ? playingPos : start;
       const oldSource = this._activeSource;
       this._activeSource = null;
       this._startSource(resumeAt);
