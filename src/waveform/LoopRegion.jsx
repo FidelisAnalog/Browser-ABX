@@ -19,6 +19,7 @@ const HANDLE_TRIANGLE_SIZE = 8;
  * @param {number} props.height - Waveform height in pixels
  * @param {(start: number, end: number) => void} props.onLoopRegionChange
  * @param {(time: number) => number} props.timeToX - Convert time to x position
+ * @param {{ current: boolean }} props.dragActiveRef - Shared ref to suppress click-to-seek during drags
  */
 const LoopRegion = React.memo(function LoopRegion({
   loopRegion,
@@ -27,6 +28,7 @@ const LoopRegion = React.memo(function LoopRegion({
   height,
   onLoopRegionChange,
   timeToX,
+  dragActiveRef,
 }) {
   const draggingRef = useRef(null); // 'start' | 'end' | null
   const svgRectRef = useRef(null);
@@ -46,6 +48,7 @@ const LoopRegion = React.memo(function LoopRegion({
       e.stopPropagation();
       e.preventDefault();
       draggingRef.current = handle;
+      dragActiveRef.current = true;
 
       // Get SVG bounding rect for mouse position calculation
       const svgEl = e.target.closest('svg');
@@ -85,6 +88,9 @@ const LoopRegion = React.memo(function LoopRegion({
 
       const handleMouseUp = () => {
         draggingRef.current = null;
+        // Clear drag flag after a microtask so the click event (which fires
+        // synchronously after mouseup) still sees dragActiveRef=true
+        setTimeout(() => { dragActiveRef.current = false; }, 0);
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
       };

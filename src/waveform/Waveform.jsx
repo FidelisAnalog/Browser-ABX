@@ -36,6 +36,7 @@ const Waveform = React.memo(function Waveform({
 }) {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
+  const dragActiveRef = useRef(false); // Shared with LoopRegion to suppress click-to-seek during drags
 
   // Measure container width
   const [containerWidth, setContainerWidth] = React.useState(600);
@@ -84,9 +85,10 @@ const Waveform = React.memo(function Waveform({
     return upper + lower + ' Z';
   }, [waveformData, containerWidth]);
 
-  // Click-to-seek handler
+  // Click-to-seek handler — suppressed when a handle drag just ended
   const handleClick = useCallback(
     (e) => {
+      if (dragActiveRef.current) return;
       if (!svgRef.current || duration <= 0) return;
       const rect = svgRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -136,6 +138,7 @@ const Waveform = React.memo(function Waveform({
           height={WAVEFORM_HEIGHT}
           onLoopRegionChange={onLoopRegionChange}
           timeToX={timeToX}
+          dragActiveRef={dragActiveRef}
         />
 
         {/* Waveform */}
