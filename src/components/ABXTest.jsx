@@ -4,7 +4,7 @@
  * Uses composition (not inheritance) with shared AudioControls.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Button, Container, Divider, Paper, Typography } from '@mui/material';
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
@@ -40,6 +40,9 @@ export default function ABXTest({
 
   // The user's answer: which non-X option they think X matches
   const [answer, setAnswer] = useState(null);
+
+  // Reset answer when X changes (new iteration)
+  useEffect(() => { setAnswer(null); }, [xOption]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);

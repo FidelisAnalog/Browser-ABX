@@ -176,7 +176,7 @@ export default function TestRunner({ configUrl }) {
     setCurrentOptions(ordered);
 
     let xOpt = null;
-    if (isAbx) {
+    if (test.testType.toLowerCase() === 'abx') {
       const randomOption = ordered[Math.floor(Math.random() * ordered.length)];
       xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
       setXOption(xOpt);
@@ -303,7 +303,7 @@ export default function TestRunner({ configUrl }) {
   if (test.testType.toLowerCase() === 'ab') {
     return (
       <ABTest
-        key={`${testStep}.${repeatStep}`}
+        key={testStep}
         name={test.name}
         description={test.description}
         stepStr={stepStr}
@@ -319,7 +319,7 @@ export default function TestRunner({ configUrl }) {
   if (test.testType.toLowerCase() === 'abx') {
     return (
       <ABXTest
-        key={`${testStep}.${repeatStep}`}
+        key={testStep}
         name={test.name}
         description={test.description}
         stepStr={stepStr}
