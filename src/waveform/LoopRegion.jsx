@@ -65,22 +65,24 @@ const LoopRegion = React.memo(function LoopRegion({
         const region = loopRegionRef.current;
         const onChange = onChangeRef.current;
 
+        const MIN_LOOP = 0.5; // minimum loop duration in seconds
+
         if (draggingRef.current === 'start') {
           let newStart = Math.max(0, time);
           let newEnd = region[1];
           // If start reaches end, push end along
-          if (newStart >= newEnd - 0.01) {
-            newStart = Math.min(newStart, dur - 0.01);
-            newEnd = Math.min(newStart + 0.01, dur);
+          if (newStart >= newEnd - MIN_LOOP) {
+            newStart = Math.min(newStart, dur - MIN_LOOP);
+            newEnd = Math.min(newStart + MIN_LOOP, dur);
           }
           onChange(newStart, newEnd);
         } else {
           let newStart = region[0];
           let newEnd = Math.min(dur, time);
           // If end reaches start, push start along
-          if (newEnd <= newStart + 0.01) {
-            newEnd = Math.max(newEnd, 0.01);
-            newStart = Math.max(newEnd - 0.01, 0);
+          if (newEnd <= newStart + MIN_LOOP) {
+            newEnd = Math.max(newEnd, MIN_LOOP);
+            newStart = Math.max(newEnd - MIN_LOOP, 0);
           }
           onChange(newStart, newEnd);
         }
