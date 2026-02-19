@@ -19,7 +19,7 @@ import { useSelectedTrack } from '../audio/useEngineState';
  * @param {object} props.xOption - The X option (has audioUrl matching one of the options)
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform (from TestRunner)
- * @param {boolean} props.duckingForced
+ * @param {boolean} props.crossfadeForced
  * @param {(selectedOption: object, correctOption: object) => void} props.onSubmit
  */
 export default function ABXTest({
@@ -30,7 +30,7 @@ export default function ABXTest({
   xOption,
   engine,
   channelData,
-  duckingForced,
+  crossfadeForced,
   onSubmit,
 }) {
   const trackCount = options.length + 1; // options + X
@@ -123,7 +123,7 @@ export default function ABXTest({
           <AudioControls
             engine={engine}
             channelData={channelData}
-            duckingForced={duckingForced}
+            crossfadeForced={crossfadeForced}
           />
         </Box>
       </Container>

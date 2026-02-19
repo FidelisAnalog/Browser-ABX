@@ -1,6 +1,6 @@
 /**
  * Audio engine — manages AudioContext, playback, transport controls, track switching,
- * loop region, seeking, audio ducking, volume persistence, and playhead animation.
+ * loop region, seeking, crossfade, volume persistence, and playhead animation.
  *
  * This is a plain JS class that acts as an external store for React components.
  * Components subscribe to state slices via useSyncExternalStore (see useEngineState.js).
@@ -38,10 +38,6 @@ export class AudioEngine {
     this._gainNode = this._context.createGain();
     this._gainNode.connect(this._context.destination);
 
-    // Duck gain node — separate from volume so ducking doesn't affect the volume slider
-    this._duckGainNode = this._context.createGain();
-    this._duckGainNode.connect(this._gainNode);
-
     // State
     this._buffers = [];        // AudioBuffer per track
     this._activeSource = null; // Currently playing AudioBufferSourceNode
@@ -62,10 +58,10 @@ export class AudioEngine {
     this._gainNode.gain.value = this._volume;
     this._volumePersistTimer = null;
 
-    // Ducking
-    this._duckingEnabled = false;
-    this._duckingForced = false;
-    this._duckDuration = 0.25; // 250ms each way → 500ms total
+    // Crossfade
+    this._crossfadeEnabled = false;
+    this._crossfadeForced = false;
+    this._crossfadeDuration = 0.05; // 50ms
 
     // Playhead animation — ref-like object, updated via rAF
     this._currentTimeRef = { current: 0 };
@@ -113,7 +109,7 @@ export class AudioEngine {
   getDuration() { return this._buffers.length > 0 ? this._buffers[0].duration : 0; }
   getVolume() { return this._volume; }
   getLoopRegion() { return this._loopRegionSnapshot; }
-  getDuckingEnabled() { return this._duckingEnabled; }
+  getCrossfadeEnabled() { return this._crossfadeEnabled; }
 
   /** @returns {SampleRateInfo} */
   getSampleRateInfo() { return this._sampleRateInfo; }
@@ -262,44 +258,44 @@ export class AudioEngine {
     this._notify();
   }
 
-  // --- Ducking ---
+  // --- Crossfade ---
 
   /**
-   * Enable/disable audio ducking on track switches.
-   * Ignored when ducking is forced by config.
+   * Enable/disable crossfade on track switches.
+   * Ignored when crossfade is forced by config.
    * @param {boolean} enabled
    */
-  setDucking(enabled) {
-    if (this._duckingForced) return;
-    this._duckingEnabled = enabled;
+  setCrossfade(enabled) {
+    if (this._crossfadeForced) return;
+    this._crossfadeEnabled = enabled;
     this._notify();
   }
 
   /**
-   * Lock ducking on/off based on test config.
+   * Lock crossfade on/off based on test config.
    * @param {boolean} forced
    */
-  setDuckingForced(forced) {
-    this._duckingForced = forced;
+  setCrossfadeForced(forced) {
+    this._crossfadeForced = forced;
     if (forced) {
-      this._duckingEnabled = true;
+      this._crossfadeEnabled = true;
     }
     this._notify();
   }
 
   /**
-   * Set duck duration in seconds.
+   * Set crossfade duration in seconds.
    * @param {number} duration
    */
-  setDuckDuration(duration) {
-    this._duckDuration = duration;
+  setCrossfadeDuration(duration) {
+    this._crossfadeDuration = duration;
   }
 
   // --- Track selection ---
 
   /**
    * Select a track (A=0, B=1, X=2, etc.) — switches audio source.
-   * If playing, performs seamless switch (with optional ducking).
+   * If playing, performs seamless switch (with optional crossfade).
    * Eagerly resumes AudioContext on user gesture.
    * @param {number} index
    */
@@ -317,29 +313,40 @@ export class AudioEngine {
     if (wasPlaying && prevTrack !== index) {
       const position = this.currentTime;
 
-      if (this._duckingEnabled) {
+      if (this._crossfadeEnabled) {
+        const dur = this._crossfadeDuration;
         const now = this._context.currentTime;
-        this._duckGainNode.gain.cancelScheduledValues(now);
-        this._duckGainNode.gain.setValueAtTime(1, now);
-        this._duckGainNode.gain.linearRampToValueAtTime(0, now + this._duckDuration);
-        this._duckGainNode.gain.linearRampToValueAtTime(1, now + this._duckDuration * 2);
 
-        // Start new source after duck-down completes — read fresh position
-        // so the new source picks up where playback actually is, not where
-        // it was when the button was pressed.
+        // Fade out old source through a temporary gain node
+        const oldSource = this._activeSource;
+        const oldGain = this._context.createGain();
+        oldSource.disconnect();
+        oldSource.connect(oldGain);
+        oldGain.connect(this._gainNode);
+        oldGain.gain.setValueAtTime(1, now);
+        oldGain.gain.linearRampToValueAtTime(0, now + dur);
+
+        // Fade in new source through a temporary gain node
+        const newGain = this._context.createGain();
+        newGain.connect(this._gainNode);
+        newGain.gain.setValueAtTime(0, now);
+        newGain.gain.linearRampToValueAtTime(1, now + dur);
+        this._startSource(position, newGain);
+
+        // Clean up after crossfade completes
         setTimeout(() => {
-          if (this._transportState === 'playing') {
-            const freshPosition = this.currentTime;
-            const oldSource = this._activeSource;
-            this._startSource(freshPosition);
-            if (oldSource) {
-              try { oldSource.stop(); } catch { /* */ }
-              oldSource.disconnect();
-            }
+          oldGain.disconnect();
+          try { oldSource.stop(); } catch { /* */ }
+          oldSource.disconnect();
+          // Reconnect new source directly to _gainNode
+          if (this._activeSource) {
+            this._activeSource.disconnect();
+            this._activeSource.connect(this._gainNode);
           }
-        }, this._duckDuration * 1000);
+          newGain.disconnect();
+        }, dur * 1000);
       } else {
-        // Overlap: start new source before stopping old
+        // Instant switch: start new source before stopping old
         const oldSource = this._activeSource;
         this._activeSource = null;
         this._startSource(position);
@@ -471,7 +478,7 @@ export class AudioEngine {
 
   // --- Internal methods ---
 
-  _startSource(fromTime) {
+  _startSource(fromTime, destinationNode) {
     const buffer = this._buffers[this._selectedTrack];
     if (!buffer) return;
 
@@ -481,7 +488,7 @@ export class AudioEngine {
       loopStart: this._loopStart,
       loopEnd: this._loopEnd,
     });
-    source.connect(this._duckGainNode);
+    source.connect(destinationNode || this._gainNode);
     source.start(0, fromTime);
 
     this._activeSource = source;

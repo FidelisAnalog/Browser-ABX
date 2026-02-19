@@ -18,7 +18,7 @@ import { useSelectedTrack } from '../audio/useEngineState';
  * @param {object[]} props.options - Shuffled option objects
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform (from TestRunner)
- * @param {boolean} props.duckingForced
+ * @param {boolean} props.crossfadeForced
  * @param {(selectedOption: object) => void} props.onSubmit
  */
 export default function ABTest({
@@ -28,7 +28,7 @@ export default function ABTest({
   options,
   engine,
   channelData,
-  duckingForced,
+  crossfadeForced,
   onSubmit,
 }) {
   const selectedTrack = useSelectedTrack(engine);
@@ -88,7 +88,7 @@ export default function ABTest({
           <AudioControls
             engine={engine}
             channelData={channelData}
-            duckingForced={duckingForced}
+            crossfadeForced={crossfadeForced}
           />
         </Box>
       </Container>

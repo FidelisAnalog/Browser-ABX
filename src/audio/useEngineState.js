@@ -47,8 +47,8 @@ export function useVolume(engine) {
 }
 
 /** @param {import('./audioEngine').AudioEngine|null} engine */
-export function useDuckingEnabled(engine) {
+export function useCrossfadeEnabled(engine) {
   const sub = useMemo(() => engine ? engine.subscribe.bind(engine) : noop, [engine]);
-  const snap = useMemo(() => engine ? engine.getDuckingEnabled.bind(engine) : () => false, [engine]);
+  const snap = useMemo(() => engine ? engine.getCrossfadeEnabled.bind(engine) : () => false, [engine]);
   return useSyncExternalStore(sub, snap);
 }

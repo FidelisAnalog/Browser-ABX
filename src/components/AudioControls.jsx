@@ -1,6 +1,6 @@
 /**
  * AudioControls — combined component assembling waveform display, transport controls,
- * volume slider, and ducking toggle into a single audio control panel.
+ * volume slider, and crossfade toggle into a single audio control panel.
  */
 
 import React, { useCallback } from 'react';
@@ -8,7 +8,7 @@ import { Box, Paper, IconButton, Tooltip } from '@mui/material';
 import Waveform from '../waveform/Waveform';
 import TransportControls from './TransportControls';
 import VolumeSlider from './VolumeSlider';
-import DuckingToggle from './DuckingToggle';
+import CrossfadeToggle from './CrossfadeToggle';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { useDuration, useLoopRegion, useTransportState } from '../audio/useEngineState';
 
@@ -16,9 +16,9 @@ import { useDuration, useLoopRegion, useTransportState } from '../audio/useEngin
  * @param {object} props
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Channel 0 data from each track
- * @param {boolean} props.duckingForced
+ * @param {boolean} props.crossfadeForced
  */
-export default function AudioControls({ engine, channelData, duckingForced }) {
+export default function AudioControls({ engine, channelData, crossfadeForced }) {
   const duration = useDuration(engine);
   const loopRegion = useLoopRegion(engine);
   const transportState = useTransportState(engine);
@@ -110,8 +110,8 @@ export default function AudioControls({ engine, channelData, duckingForced }) {
           </Tooltip>
         </Box>
 
-        {/* Center: Ducking toggle */}
-        <DuckingToggle engine={engine} forced={duckingForced} />
+        {/* Center: Crossfade toggle */}
+        <CrossfadeToggle engine={engine} forced={crossfadeForced} />
 
         {/* Right: Volume */}
         <Box sx={{ minWidth: 140, maxWidth: 200 }}>

@@ -46,7 +46,7 @@ export default function TestRunner({ configUrl }) {
   const shuffledOptionsRef = useRef([]);
   const [xOption, setXOption] = useState(null);
 
-  // Get current test config (for ducking settings)
+  // Get current test config (for crossfade settings)
   const currentTest = config && testStep >= 0 && testStep < config.tests.length
     ? config.tests[testStep]
     : null;
@@ -68,12 +68,12 @@ export default function TestRunner({ configUrl }) {
     };
   }, []);
 
-  // Update ducking config when test changes
+  // Update crossfade config when test changes
   useEffect(() => {
     if (!engine) return;
-    engine.setDuckingForced(currentTest?.ducking || false);
-    if (currentTest?.duckDuration != null) {
-      engine.setDuckDuration(currentTest.duckDuration / 1000);
+    engine.setCrossfadeForced(currentTest?.crossfade || false);
+    if (currentTest?.crossfadeDuration != null) {
+      engine.setCrossfadeDuration(currentTest.crossfadeDuration / 1000);
     }
   }, [engine, currentTest]);
 
@@ -298,7 +298,7 @@ export default function TestRunner({ configUrl }) {
   // Test screens
   const test = config.tests[testStep];
   const stepStr = `${repeatStep + 1}/${test.repeat}`;
-  const duckingForced = currentTest?.ducking || false;
+  const crossfadeForced = currentTest?.crossfade || false;
 
   if (test.testType.toLowerCase() === 'ab') {
     return (
@@ -310,7 +310,7 @@ export default function TestRunner({ configUrl }) {
         options={currentOptions}
         engine={engine}
         channelData={testChannelData}
-        duckingForced={duckingForced}
+        crossfadeForced={crossfadeForced}
         onSubmit={handleAbSubmit}
       />
     );
@@ -327,7 +327,7 @@ export default function TestRunner({ configUrl }) {
         xOption={xOption}
         engine={engine}
         channelData={testChannelData}
-        duckingForced={duckingForced}
+        crossfadeForced={crossfadeForced}
         onSubmit={handleAbxSubmit}
       />
     );
