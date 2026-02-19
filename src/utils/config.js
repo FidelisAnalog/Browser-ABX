@@ -1,6 +1,6 @@
 /**
  * YAML configuration parser — loads and normalizes test configuration.
- * Backwards compatible with existing JP_ABX YAML configs.
+ * Backwards compatible with existing jaakkopasanen/ABX YAML configs.
  */
 
 import yaml from 'js-yaml';
