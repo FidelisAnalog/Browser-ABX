@@ -49,7 +49,6 @@ export class AudioEngine {
     this._transportState = 'stopped';
     this._playStartTime = 0;   // audioContext.currentTime when play started
     this._playOffset = 0;      // Offset into buffer when play started
-    this._pauseTime = 0;       // context.currentTime when paused (for resume offset calc)
 
     // Loop region (in seconds)
     this._loopStart = 0;
@@ -338,10 +337,9 @@ export class AudioEngine {
 
     if (this._transportState === 'paused' && this._activeSource) {
       // Resume from pause — just unfreeze the source. Synchronous, no node creation.
-      // Recalculate playStartTime to account for the paused duration
-      const pausedDuration = this._context.currentTime - this._pauseTime;
-      this._playStartTime += pausedDuration;
+      // Reset playStartTime so elapsed starts from 0; _playOffset already holds pause position.
       this._activeSource.playbackRate.value = 1;
+      this._playStartTime = this._context.currentTime;
       this._setTransportState('playing');
       this._startAnimation();
     } else {
@@ -374,7 +372,6 @@ export class AudioEngine {
     if (this._transportState !== 'playing') return;
 
     this._playOffset = this.currentTime;
-    this._pauseTime = this._context.currentTime;
     this._currentTimeRef.current = this._playOffset;
     this._stopAnimation();
 
@@ -420,7 +417,6 @@ export class AudioEngine {
       this._stopSource();
       this._startSource(clampedTime);
       this._activeSource.playbackRate.value = 0;
-      this._pauseTime = this._context.currentTime;
       this._playOffset = clampedTime;
       this._currentTimeRef.current = clampedTime;
     } else {
@@ -465,7 +461,6 @@ export class AudioEngine {
   _stopSource() {
     if (this._activeSource) {
       try {
-        this._activeSource.playbackRate.value = 1; // Ensure rate is normal before stopping
         this._activeSource.stop();
       } catch {
         // Source may not have been started
