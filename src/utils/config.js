@@ -84,7 +84,7 @@ function normalizeConfig(raw) {
       options: testOptions,
       repeat: test.repeat || 10,
       ducking: test.ducking || false,
-      duckDuration: test.duckDuration || 5,
+      duckDuration: test.duckDuration ?? null,
     };
   });
 
