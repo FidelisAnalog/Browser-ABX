@@ -63,6 +63,7 @@ export class AudioEngine {
     this._crossfadeEnabled = false;
     this._crossfadeForced = false;
     this._crossfadeDuration = 0.05; // 50ms
+    this._pendingCrossfadeCleanup = null;
 
     // Playhead animation — ref-like object, updated via rAF
     this._currentTimeRef = { current: 0 };
@@ -315,8 +316,16 @@ export class AudioEngine {
       const position = this.currentTime;
 
       if (this._crossfadeEnabled) {
+        // Flush any in-flight crossfade cleanup before starting a new one
+        if (this._pendingCrossfadeCleanup) {
+          clearTimeout(this._pendingCrossfadeCleanup);
+          this._pendingCrossfadeCleanup = null;
+        }
+
         const dur = this._crossfadeDuration;
-        const now = this._context.currentTime;
+        // Schedule automation events slightly in the future so they're
+        // guaranteed ahead of the audio thread clock (standard Web Audio practice)
+        const startAt = this._context.currentTime + 0.005;
 
         // Fade out old source through a temporary gain node.
         // Connect new path before disconnecting old to avoid any gap.
@@ -326,18 +335,19 @@ export class AudioEngine {
         oldGain.connect(this._gainNode);
         oldSource.connect(oldGain);
         try { oldSource.disconnect(oldDest); } catch { /* rapid switch — already rerouted */ }
-        oldGain.gain.setValueAtTime(1, now);
-        oldGain.gain.linearRampToValueAtTime(0, now + dur);
+        oldGain.gain.setValueAtTime(1, startAt);
+        oldGain.gain.linearRampToValueAtTime(0, startAt + dur);
 
         // Fade in new source through a temporary gain node
         const newGain = this._context.createGain();
         newGain.connect(this._gainNode);
-        newGain.gain.setValueAtTime(0, now);
-        newGain.gain.linearRampToValueAtTime(1, now + dur);
+        newGain.gain.setValueAtTime(0, startAt);
+        newGain.gain.linearRampToValueAtTime(1, startAt + dur);
         this._startSource(position, newGain);
 
         // Clean up after crossfade completes
-        setTimeout(() => {
+        this._pendingCrossfadeCleanup = setTimeout(() => {
+          this._pendingCrossfadeCleanup = null;
           oldGain.disconnect();
           try { oldSource.stop(); } catch { /* */ }
           oldSource.disconnect();
@@ -348,7 +358,7 @@ export class AudioEngine {
             this._activeSourceDest = this._gainNode;
           }
           newGain.disconnect();
-        }, dur * 1000);
+        }, (dur + 0.01) * 1000);
       } else {
         // Instant switch: start new source before stopping old
         const oldSource = this._activeSource;
@@ -476,6 +486,7 @@ export class AudioEngine {
     this._stopAnimation();
     this._silenceAndStopSource();
     clearTimeout(this._volumePersistTimer);
+    clearTimeout(this._pendingCrossfadeCleanup);
     this._subscribers.clear();
     this._context.close();
   }
