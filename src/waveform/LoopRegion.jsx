@@ -31,13 +31,15 @@ const LoopRegion = React.memo(function LoopRegion({
   const draggingRef = useRef(null); // 'start' | 'end' | null
   const svgRectRef = useRef(null);
 
-  const xToTime = useCallback(
-    (x) => {
-      if (width <= 0) return 0;
-      return (x / width) * duration;
-    },
-    [width, duration]
-  );
+  // Refs so the mousemove handler always reads current values (no stale closures)
+  const loopRegionRef = useRef(loopRegion);
+  loopRegionRef.current = loopRegion;
+  const onChangeRef = useRef(onLoopRegionChange);
+  onChangeRef.current = onLoopRegionChange;
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
+  const widthRef = useRef(width);
+  widthRef.current = width;
 
   const handleMouseDown = useCallback(
     (handle) => (e) => {
@@ -54,26 +56,30 @@ const LoopRegion = React.memo(function LoopRegion({
       const handleMouseMove = (moveEvent) => {
         if (!draggingRef.current || !svgRectRef.current) return;
         const x = moveEvent.clientX - svgRectRef.current.left;
-        const time = Math.max(0, Math.min(xToTime(x), duration));
+        const dur = durationRef.current;
+        const w = widthRef.current;
+        const time = Math.max(0, Math.min(w > 0 ? (x / w) * dur : 0, dur));
+        const region = loopRegionRef.current;
+        const onChange = onChangeRef.current;
 
         if (draggingRef.current === 'start') {
           let newStart = Math.max(0, time);
-          let newEnd = loopRegion[1];
+          let newEnd = region[1];
           // If start reaches end, push end along
           if (newStart >= newEnd - 0.01) {
-            newStart = Math.min(newStart, duration - 0.01);
-            newEnd = Math.min(newStart + 0.01, duration);
+            newStart = Math.min(newStart, dur - 0.01);
+            newEnd = Math.min(newStart + 0.01, dur);
           }
-          onLoopRegionChange(newStart, newEnd);
+          onChange(newStart, newEnd);
         } else {
-          let newStart = loopRegion[0];
-          let newEnd = Math.min(duration, time);
+          let newStart = region[0];
+          let newEnd = Math.min(dur, time);
           // If end reaches start, push start along
           if (newEnd <= newStart + 0.01) {
             newEnd = Math.max(newEnd, 0.01);
             newStart = Math.max(newEnd - 0.01, 0);
           }
-          onLoopRegionChange(newStart, newEnd);
+          onChange(newStart, newEnd);
         }
       };
 
@@ -86,7 +92,15 @@ const LoopRegion = React.memo(function LoopRegion({
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
-    [duration, loopRegion, onLoopRegionChange, xToTime]
+    []
+  );
+
+  const xToTime = useCallback(
+    (x) => {
+      if (width <= 0) return 0;
+      return (x / width) * duration;
+    },
+    [width, duration]
   );
 
   const startX = timeToX(loopRegion[0]);
