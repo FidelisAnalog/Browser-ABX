@@ -125,7 +125,7 @@ const Waveform = React.memo(function Waveform({
         width={containerWidth}
         height={TOTAL_HEIGHT}
         onClick={handleClick}
-        style={{ display: 'block' }}
+        style={{ display: 'block', touchAction: 'none' }}
       >
         {/* Background */}
         <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={WAVEFORM_BG} />
