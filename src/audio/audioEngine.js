@@ -324,11 +324,14 @@ export class AudioEngine {
         this._duckGainNode.gain.linearRampToValueAtTime(0, now + this._duckDuration);
         this._duckGainNode.gain.linearRampToValueAtTime(1, now + this._duckDuration * 2);
 
-        // Start new source after duck-down, then stop old
+        // Start new source after duck-down completes — read fresh position
+        // so the new source picks up where playback actually is, not where
+        // it was when the button was pressed.
         setTimeout(() => {
           if (this._transportState === 'playing') {
+            const freshPosition = this.currentTime;
             const oldSource = this._activeSource;
-            this._startSource(position);
+            this._startSource(freshPosition);
             if (oldSource) {
               try { oldSource.stop(); } catch { /* */ }
               oldSource.disconnect();

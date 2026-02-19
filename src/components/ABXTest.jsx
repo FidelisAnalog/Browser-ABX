@@ -4,11 +4,10 @@
  * Uses composition (not inheritance) with shared AudioControls.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Box, Button, Container, Divider, Paper, Typography } from '@mui/material';
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
-import { extractChannel0 } from '../waveform/generateWaveform';
 import { useSelectedTrack } from '../audio/useEngineState';
 
 /**
@@ -16,10 +15,10 @@ import { useSelectedTrack } from '../audio/useEngineState';
  * @param {string} props.name - Test name
  * @param {string} [props.description] - Test instructions
  * @param {string} props.stepStr - e.g., "3/10"
- * @param {object[]} props.options - Original (non-X) options in shuffled order
+ * @param {object[]} props.options - Original (non-X) options in fixed order
  * @param {object} props.xOption - The X option (has audioUrl matching one of the options)
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
- * @param {AudioBuffer[]} props.audioBuffers - AudioBuffers: [option0, option1, ..., X]
+ * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform (from TestRunner)
  * @param {boolean} props.duckingForced
  * @param {(selectedOption: object, correctOption: object) => void} props.onSubmit
  */
@@ -30,15 +29,10 @@ export default function ABXTest({
   options,
   xOption,
   engine,
-  audioBuffers,
+  channelData,
   duckingForced,
   onSubmit,
 }) {
-  const channelData = useMemo(
-    () => extractChannel0(audioBuffers),
-    [audioBuffers]
-  );
-
   const trackCount = options.length + 1; // options + X
   const xTrackIndex = trackCount - 1;    // X is always last
 

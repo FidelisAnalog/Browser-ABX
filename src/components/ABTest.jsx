@@ -4,11 +4,10 @@
  * Track selection, waveform, transport, and submit.
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Box, Button, Container, Divider, Paper, Typography } from '@mui/material';
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
-import { extractChannel0 } from '../waveform/generateWaveform';
 import { useSelectedTrack } from '../audio/useEngineState';
 
 /**
@@ -18,7 +17,7 @@ import { useSelectedTrack } from '../audio/useEngineState';
  * @param {string} props.stepStr - e.g., "3/10"
  * @param {object[]} props.options - Shuffled option objects
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
- * @param {AudioBuffer[]} props.audioBuffers - AudioBuffers in option order
+ * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform (from TestRunner)
  * @param {boolean} props.duckingForced
  * @param {(selectedOption: object) => void} props.onSubmit
  */
@@ -28,15 +27,10 @@ export default function ABTest({
   stepStr,
   options,
   engine,
-  audioBuffers,
+  channelData,
   duckingForced,
   onSubmit,
 }) {
-  const channelData = useMemo(
-    () => extractChannel0(audioBuffers),
-    [audioBuffers]
-  );
-
   const selectedTrack = useSelectedTrack(engine);
 
   const selectedLabel = String.fromCharCode(65 + selectedTrack);

@@ -13,27 +13,48 @@ import { decodeFlac, isFlac } from './decodeFlac';
  * @typedef {{ sampleRate: number, bitDepth: number, channels: number, sampleCount: number, samples: Float32Array[] }} DecodedAudio
  */
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+
 /**
  * Fetch and decode a single audio file.
+ * Retries on network errors (Dropbox CDN can drop connections intermittently).
  * @param {string} url - URL to WAV or FLAC file
  * @returns {Promise<DecodedAudio>}
  */
 export async function fetchAndDecode(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch audio: ${url} (${response.status} ${response.statusText})`);
+  let lastError;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio: ${url} (${response.status} ${response.statusText})`);
+      }
+
+      const buffer = await response.arrayBuffer();
+
+      if (isWav(buffer)) {
+        return decodeWav(buffer);
+      }
+      if (isFlac(buffer)) {
+        return decodeFlac(buffer);
+      }
+
+      throw new Error(`Unsupported audio format for: ${url}. Only WAV and FLAC are supported.`);
+    } catch (err) {
+      lastError = err;
+      // Don't retry on format errors — those won't resolve themselves
+      if (err.message.startsWith('Unsupported audio format')) {
+        throw err;
+      }
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
+    }
   }
 
-  const buffer = await response.arrayBuffer();
-
-  if (isWav(buffer)) {
-    return decodeWav(buffer);
-  }
-  if (isFlac(buffer)) {
-    return decodeFlac(buffer);
-  }
-
-  throw new Error(`Unsupported audio format for: ${url}. Only WAV and FLAC are supported.`);
+  throw lastError;
 }
 
 /**

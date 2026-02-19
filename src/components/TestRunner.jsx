@@ -45,9 +45,6 @@ export default function TestRunner({ configUrl }) {
   const [currentOptions, setCurrentOptions] = useState([]);
   const [xOption, setXOption] = useState(null);
 
-  // Current AudioBuffers for the active test iteration
-  const [currentBuffers, setCurrentBuffers] = useState([]);
-
   // Get current test config (for ducking settings)
   const currentTest = config && testStep >= 0 && testStep < config.tests.length
     ? config.tests[testStep]
@@ -127,6 +124,27 @@ export default function TestRunner({ configUrl }) {
       .catch((err) => setConfigError(err.message));
   }, [audioUrls]);
 
+  // Stable channel data per test — derived from decoded cache, not AudioBuffers.
+  // Only recomputes when testStep changes (new test = potentially different files).
+  // For ABX the waveform composite is identical every iteration since A, B are fixed
+  // and X is always one of A or B.
+  const testChannelData = useMemo(() => {
+    if (!config || testStep < 0 || testStep >= config.tests.length) return [];
+    const cache = decodedCacheRef.current;
+    if (cache.size === 0) return [];
+    const test = config.tests[testStep];
+    // Extract channel 0 from each option's decoded data
+    const ch0 = test.options.map((opt) => {
+      const decoded = cache.get(opt.audioUrl);
+      return decoded ? decoded.samples[0] : new Float32Array(0);
+    });
+    // For ABX, add the first option again (X is always one of them — same waveform shape)
+    if (test.testType.toLowerCase() === 'abx' && ch0.length > 0) {
+      ch0.push(ch0[0]);
+    }
+    return ch0;
+  }, [config, testStep]);
+
   /**
    * Build AudioBuffers for a set of options (+ optional X) and load into engine.
    */
@@ -145,25 +163,25 @@ export default function TestRunner({ configUrl }) {
       buffers.push(createAudioBuffer(ctx, xDecoded));
     }
 
-    setCurrentBuffers(buffers);
     engineRef.current.loadBuffers(buffers);
   }, []);
 
-  // Setup test iteration (shuffle options, pick X for ABX)
+  // Setup test iteration — shuffle for AB (preference), fixed order for ABX (identification)
   const setupIteration = useCallback((test) => {
-    const shuffled = shuffle(test.options);
-    setCurrentOptions(shuffled);
+    const isAbx = test.testType.toLowerCase() === 'abx';
+    const ordered = isAbx ? test.options : shuffle(test.options);
+    setCurrentOptions(ordered);
 
     let xOpt = null;
-    if (test.testType.toLowerCase() === 'abx') {
-      const randomOption = shuffled[Math.floor(Math.random() * shuffled.length)];
+    if (isAbx) {
+      const randomOption = ordered[Math.floor(Math.random() * ordered.length)];
       xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
       setXOption(xOpt);
     } else {
       setXOption(null);
     }
 
-    return { shuffled, xOpt };
+    return { shuffled: ordered, xOpt };
   }, []);
 
   // Start test (from welcome screen)
@@ -288,7 +306,7 @@ export default function TestRunner({ configUrl }) {
         stepStr={stepStr}
         options={currentOptions}
         engine={engine}
-        audioBuffers={currentBuffers}
+        channelData={testChannelData}
         duckingForced={duckingForced}
         onSubmit={handleAbSubmit}
       />
@@ -305,7 +323,7 @@ export default function TestRunner({ configUrl }) {
         options={currentOptions}
         xOption={xOption}
         engine={engine}
-        audioBuffers={currentBuffers}
+        channelData={testChannelData}
         duckingForced={duckingForced}
         onSubmit={handleAbxSubmit}
       />
