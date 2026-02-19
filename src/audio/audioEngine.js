@@ -157,7 +157,7 @@ export class AudioEngine {
    */
   loadBuffers(buffers) {
     this._stopAnimation();
-    this._stopSource();
+    this._silenceAndStopSource();
     this._buffers = buffers;
 
     const dur = this.getDuration();
@@ -328,45 +328,34 @@ export class AudioEngine {
 
   /**
    * Play — start or resume playback.
-   * If paused (source frozen via playbackRate=0), sets rate back to 1 — synchronous, instant.
-   * If stopped, creates a new source.
+   * Creates a new source from the current position (paused) or loop start (stopped).
    */
   play() {
     if (this._buffers.length === 0) return;
     if (this._transportState === 'playing') return;
 
-    if (this._transportState === 'paused' && this._activeSource) {
-      // Resume from pause — just unfreeze the source. Synchronous, no node creation.
-      // Reset playStartTime so elapsed starts from 0; _playOffset already holds pause position.
-      this._activeSource.playbackRate.value = 1;
-      this._playStartTime = this._context.currentTime;
+    const position =
+      this._transportState === 'paused' ? this._playOffset : this._loopStart;
+
+    if (this._context.state !== 'running') {
       this._setTransportState('playing');
       this._startAnimation();
+      this.resumeContext().then(() => {
+        if (this._transportState === 'playing') {
+          this._startSource(position);
+        }
+      });
     } else {
-      // Start from stopped (or paused without a source)
-      const position =
-        this._transportState === 'paused' ? this._playOffset : this._loopStart;
-
-      if (this._context.state !== 'running') {
-        this._setTransportState('playing');
-        this._startAnimation();
-        this.resumeContext().then(() => {
-          if (this._transportState === 'playing') {
-            this._startSource(position);
-          }
-        });
-      } else {
-        this._startSource(position);
-        this._setTransportState('playing');
-        this._startAnimation();
-      }
+      this._startSource(position);
+      this._setTransportState('playing');
+      this._startAnimation();
     }
   }
 
   /**
-   * Pause — freeze the source via playbackRate=0.
-   * Context keeps running so currentTime stays a reliable clock.
-   * Resume is synchronous (playbackRate=1), no hardware re-acquisition.
+   * Pause — record position and discard the source.
+   * No live source while paused means no pops on seek or stop.
+   * Resume creates a fresh source (sub-millisecond).
    */
   pause() {
     if (this._transportState !== 'playing') return;
@@ -375,10 +364,8 @@ export class AudioEngine {
     this._currentTimeRef.current = this._playOffset;
     this._stopAnimation();
 
-    // Freeze the source — audio stops instantly, node stays alive
-    if (this._activeSource) {
-      this._activeSource.playbackRate.value = 0;
-    }
+    // Silence then discard the source — no live node while paused
+    this._silenceAndStopSource();
     this._setTransportState('paused');
   }
 
@@ -386,7 +373,7 @@ export class AudioEngine {
    * Stop — destroy source and reset to loop start.
    */
   stop() {
-    this._stopSource();
+    this._silenceAndStopSource();
     this._stopAnimation();
     this._playOffset = this._loopStart;
     this._currentTimeRef.current = this._loopStart;
@@ -413,10 +400,7 @@ export class AudioEngine {
       }
       this._currentTimeRef.current = clampedTime;
     } else if (this._transportState === 'paused') {
-      // Replace paused source with one at new position (also paused)
-      this._stopSource();
-      this._startSource(clampedTime);
-      this._activeSource.playbackRate.value = 0;
+      // No live source while paused — just update the offset
       this._playOffset = clampedTime;
       this._currentTimeRef.current = clampedTime;
     } else {
@@ -432,7 +416,7 @@ export class AudioEngine {
    */
   destroy() {
     this._stopAnimation();
-    this._stopSource();
+    this._silenceAndStopSource();
     clearTimeout(this._volumePersistTimer);
     this._subscribers.clear();
     this._context.close();
@@ -458,16 +442,13 @@ export class AudioEngine {
     this._playOffset = fromTime;
   }
 
-  _stopSource() {
-    if (this._activeSource) {
-      try {
-        this._activeSource.stop();
-      } catch {
-        // Source may not have been started
-      }
-      this._activeSource.disconnect();
-      this._activeSource = null;
-    }
+  /** Disconnect source from graph before stopping — prevents pops from abrupt cutoff. */
+  _silenceAndStopSource() {
+    if (!this._activeSource) return;
+    // Disconnect source from the graph so .stop() can't pop
+    this._activeSource.disconnect();
+    try { this._activeSource.stop(); } catch { /* */ }
+    this._activeSource = null;
   }
 
   _setTransportState(state) {
