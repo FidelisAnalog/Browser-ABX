@@ -46,10 +46,8 @@ export default function ABXTest({
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
-    // If they selected a non-X track, that's their answer
-    if (index !== xTrackIndex) {
-      setAnswer(index);
-    }
+    // If they selected a non-X track, that's their answer; selecting X resets
+    setAnswer(index === xTrackIndex ? null : index);
   };
 
   const getAnswerLabel = () => {
