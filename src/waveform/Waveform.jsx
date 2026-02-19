@@ -58,8 +58,9 @@ const Waveform = React.memo(function Waveform({
   const durationRef = useRef(duration);
   durationRef.current = duration;
 
-  // Measure container width
-  const [containerWidth, setContainerWidth] = React.useState(600);
+  // Measure container width — start at 0 so the SVG is not rendered until
+  // the ResizeObserver fires with the real width (avoids a width-flash).
+  const [containerWidth, setContainerWidth] = React.useState(0);
   React.useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
@@ -204,9 +205,11 @@ const Waveform = React.memo(function Waveform({
         borderRadius: 1,
         border: '1px solid #e0e0e0',
         overflow: 'visible',
+        // Reserve space so layout doesn't jump when SVG appears
+        minHeight: TOTAL_HEIGHT,
       }}
     >
-      <svg
+      {containerWidth > 0 && <><svg
         ref={svgRef}
         width={containerWidth}
         height={TOTAL_HEIGHT}
@@ -295,6 +298,7 @@ const Waveform = React.memo(function Waveform({
             }}
           />
         </div>
+      </>}
     </Box>
   );
 });
