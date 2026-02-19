@@ -36,19 +36,27 @@ export class AudioEngine {
 
     // Gain node for volume control
     this._gainNode = this._context.createGain();
-    this._gainNode.connect(this._context.destination);
 
-    // iOS silent mode workaround: route audio through a MediaStreamDestination
-    // into an <audio> element. iOS treats <audio> as media playback which
-    // ignores the hardware silent switch.
-    try {
-      const streamDest = this._context.createMediaStreamDestination();
-      this._gainNode.connect(streamDest);
-      this._silentModeAudio = document.createElement('audio');
-      this._silentModeAudio.srcObject = streamDest.stream;
-      this._silentModeAudio.play().catch(() => { /* user gesture required — handled by resumeContext */ });
-    } catch {
-      // createMediaStreamDestination not supported — silent mode workaround unavailable
+    // iOS/iPadOS silent mode workaround: route audio through MediaStreamDestination
+    // → <audio> element instead of context.destination. iOS treats <audio> as media
+    // playback which ignores the hardware silent switch. Only one output path to
+    // avoid echo from differing latencies.
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    if (isIOS) {
+      try {
+        const streamDest = this._context.createMediaStreamDestination();
+        this._gainNode.connect(streamDest);
+        this._silentModeAudio = document.createElement('audio');
+        this._silentModeAudio.srcObject = streamDest.stream;
+        this._silentModeAudio.play().catch(() => { /* user gesture required — handled by resumeContext */ });
+      } catch {
+        // Fallback: connect directly if MediaStreamDestination unavailable
+        this._gainNode.connect(this._context.destination);
+      }
+    } else {
+      this._gainNode.connect(this._context.destination);
     }
 
     // Duck gain node — separate from volume so ducking doesn't affect the volume slider
