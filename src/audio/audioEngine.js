@@ -243,16 +243,19 @@ export class AudioEngine {
         this._currentTimeRef.current = start;
       }
     } else if (this._transportState === 'playing') {
-      // Always create a fresh source with new loop boundaries.
-      // We can't reliably track the Web Audio API's internal loop position,
-      // so a fresh source resyncs our tracking with actual audio.
-      const resumeAt = (playingPos >= start && playingPos < end) ? playingPos : start;
-      const oldSource = this._activeSource;
-      this._activeSource = null;
-      this._startSource(resumeAt);
-      if (oldSource) {
-        oldSource.disconnect();
-        try { oldSource.stop(); } catch { /* */ }
+      if (playingPos >= start && playingPos < end) {
+        // Still in bounds — re-anchor tracking, no source recreation (avoids pops)
+        this._playStartTime = this._context.currentTime;
+        this._playOffset = playingPos;
+      } else {
+        // Out of bounds — must recreate source at new position
+        const oldSource = this._activeSource;
+        this._activeSource = null;
+        this._startSource(start);
+        if (oldSource) {
+          oldSource.disconnect();
+          try { oldSource.stop(); } catch { /* */ }
+        }
       }
     }
 
