@@ -153,6 +153,10 @@ export class AudioEngine {
   loadBuffers(buffers) {
     this._stopAnimation();
     this._stopSource();
+    // Ensure context is running (may be suspended from pause)
+    if (this._context.state === 'suspended') {
+      this._context.resume();
+    }
     this._buffers = buffers;
 
     const dur = this.getDuration();
@@ -258,7 +262,9 @@ export class AudioEngine {
     if (index < 0 || index >= this._buffers.length) return;
 
     // Eagerly resume context on user gesture so play() is instant
-    this.resumeContext();
+    if (this._transportState !== 'paused') {
+      this.resumeContext();
+    }
 
     const wasPlaying = this._transportState === 'playing';
     const prevTrack = this._selectedTrack;
@@ -309,51 +315,68 @@ export class AudioEngine {
 
   /**
    * Play — start or resume playback.
+   * If paused, resumes the frozen AudioContext (no source recreation).
+   * If stopped, creates a new source and starts from loop start.
    */
   play() {
     if (this._buffers.length === 0) return;
     if (this._transportState === 'playing') return;
 
-    const position =
-      this._transportState === 'paused' ? this._playOffset : this._loopStart;
-
-    if (this._context.state !== 'running') {
+    if (this._transportState === 'paused' && this._activeSource) {
+      // Resume from pause — just unfreeze the context, no new source needed
       this._setTransportState('playing');
       this._startAnimation();
-      this.resumeContext().then(() => {
-        if (this._transportState === 'playing') {
-          this._startSource(position);
-        }
-      });
+      this._context.resume();
     } else {
-      this._startSource(position);
-      this._setTransportState('playing');
-      this._startAnimation();
+      // Start from stopped (or paused without a source, e.g. after seek-while-paused)
+      const position =
+        this._transportState === 'paused' ? this._playOffset : this._loopStart;
+
+      if (this._context.state !== 'running') {
+        this._setTransportState('playing');
+        this._startAnimation();
+        this.resumeContext().then(() => {
+          if (this._transportState === 'playing') {
+            this._startSource(position);
+          }
+        });
+      } else {
+        this._startSource(position);
+        this._setTransportState('playing');
+        this._startAnimation();
+      }
     }
   }
 
   /**
-   * Pause — hold current position.
+   * Pause — freeze the AudioContext, keeping the source node alive.
+   * Resume via play() unfreezes instantly with no source recreation.
    */
   pause() {
     if (this._transportState !== 'playing') return;
 
     this._playOffset = this.currentTime;
-    this._stopSource();
-    this._stopAnimation();
     this._currentTimeRef.current = this._playOffset;
+    this._stopAnimation();
+    // Suspend freezes the audio graph — source stays alive for instant resume
+    this._context.suspend();
     this._setTransportState('paused');
   }
 
   /**
-   * Stop — reset to loop start.
+   * Stop — destroy source and reset to loop start.
    */
   stop() {
+    const wasPaused = this._transportState === 'paused';
     this._stopSource();
     this._stopAnimation();
     this._playOffset = this._loopStart;
     this._currentTimeRef.current = this._loopStart;
     this._setTransportState('stopped');
+    // If context was suspended (from pause), resume it so it's ready for next play
+    if (wasPaused) {
+      this._context.resume();
+    }
   }
 
   /**
@@ -364,15 +387,29 @@ export class AudioEngine {
     const clampedTime = Math.max(this._loopStart, Math.min(time, this._loopEnd));
 
     if (this._transportState === 'playing') {
+      // Must recreate source at new position
       this._stopSource();
       this._startSource(clampedTime);
       this._currentTimeRef.current = clampedTime;
-    } else {
+    } else if (this._transportState === 'paused') {
+      // Destroy old source, create new one at new position, re-suspend
+      this._stopSource();
+      // Resume context briefly to allow source creation, then re-suspend
+      this._context.resume().then(() => {
+        if (this._transportState === 'paused') {
+          this._startSource(clampedTime);
+          this._playOffset = clampedTime;
+          this._playStartTime = this._context.currentTime;
+          this._context.suspend();
+        }
+      });
       this._playOffset = clampedTime;
       this._currentTimeRef.current = clampedTime;
-      if (this._transportState === 'stopped') {
-        this._setTransportState('paused');
-      }
+    } else {
+      // Stopped
+      this._playOffset = clampedTime;
+      this._currentTimeRef.current = clampedTime;
+      this._setTransportState('paused');
     }
   }
 
