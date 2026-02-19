@@ -62,7 +62,7 @@ export class AudioEngine {
     // Crossfade
     this._crossfadeEnabled = false;
     this._crossfadeForced = false;
-    this._crossfadeDuration = 0.05; // 50ms
+    this._crossfadeDuration = 0.005; // 5ms
     this._pendingCrossfadeCleanup = null;
 
     // Playhead animation — ref-like object, updated via rAF
