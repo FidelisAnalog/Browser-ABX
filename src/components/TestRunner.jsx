@@ -71,7 +71,9 @@ export default function TestRunner({ configUrl }) {
   useEffect(() => {
     if (!engine) return;
     engine.setDuckingForced(currentTest?.ducking || false);
-    engine.setDuckDuration((currentTest?.duckDuration || 5) / 1000);
+    if (currentTest?.duckDuration != null) {
+      engine.setDuckDuration(currentTest.duckDuration / 1000);
+    }
   }, [engine, currentTest]);
 
   // Load config
