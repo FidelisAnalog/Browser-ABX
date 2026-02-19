@@ -138,14 +138,22 @@ export class AudioEngine {
     if (this._transportState === 'paused') {
       return this._playOffset;
     }
-    // Playing — context.currentTime keeps advancing (never suspended)
+    // Playing — absolute position in the buffer
     const elapsed = this._context.currentTime - this._playStartTime;
+    const pos = this._playOffset + elapsed;
     const loopDuration = this._loopEnd - this._loopStart;
     if (loopDuration <= 0) return this._playOffset;
 
-    const rawPosition = this._playOffset + elapsed;
-    const intoLoop = rawPosition - this._loopStart;
-    return this._loopStart + ((intoLoop % loopDuration) + loopDuration) % loopDuration;
+    // Clamp into loop range — Web Audio API loops the actual audio,
+    // we just need the visual playhead to stay within bounds
+    if (pos >= this._loopEnd) {
+      const overshoot = pos - this._loopStart;
+      return this._loopStart + (overshoot % loopDuration);
+    }
+    if (pos < this._loopStart) {
+      return this._loopStart;
+    }
+    return pos;
   }
 
   // --- Audio loading ---
@@ -231,9 +239,16 @@ export class AudioEngine {
         this._currentTimeRef.current = start;
       }
     } else if (this._transportState === 'playing') {
-      const pos = this.currentTime;
-      if (pos < start || pos >= end) {
-        // Position outside new bounds — seamless seek to loop start
+      // Compute absolute position in the buffer
+      const elapsed = this._context.currentTime - this._playStartTime;
+      const pos = this._playOffset + elapsed;
+
+      if (pos >= start && pos < end) {
+        // Still in bounds — re-anchor so currentTime getter stays smooth
+        this._playStartTime = this._context.currentTime;
+        this._playOffset = pos;
+      } else {
+        // Out of bounds — seamless seek to loop start
         const oldSource = this._activeSource;
         this._activeSource = null;
         this._startSource(start);
