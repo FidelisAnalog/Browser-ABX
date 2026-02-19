@@ -41,8 +41,9 @@ export default function TestRunner({ configUrl }) {
   const [repeatStep, setRepeatStep] = useState(0);
   const [results, setResults] = useState([]);
 
-  // Current test options (shuffled per iteration)
+  // Current test options (shuffled once per test, persisted across iterations)
   const [currentOptions, setCurrentOptions] = useState([]);
+  const shuffledOptionsRef = useRef([]);
   const [xOption, setXOption] = useState(null);
 
   // Get current test config (for ducking settings)
@@ -168,10 +169,10 @@ export default function TestRunner({ configUrl }) {
     engineRef.current.loadBuffers(buffers);
   }, []);
 
-  // Setup test iteration — shuffle for AB (preference), fixed order for ABX (identification)
-  const setupIteration = useCallback((test) => {
-    const isAbx = test.testType.toLowerCase() === 'abx';
-    const ordered = isAbx ? test.options : shuffle(test.options);
+  // Setup test iteration — shuffle once on first iteration, reuse on repeats
+  const setupIteration = useCallback((test, isNewTest) => {
+    const ordered = isNewTest ? shuffle(test.options) : shuffledOptionsRef.current;
+    if (isNewTest) shuffledOptionsRef.current = ordered;
     setCurrentOptions(ordered);
 
     let xOpt = null;
@@ -192,7 +193,7 @@ export default function TestRunner({ configUrl }) {
     setTestStep(0);
     setRepeatStep(0);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt } = setupIteration(config.tests[0]);
+      const { shuffled, xOpt } = setupIteration(config.tests[0], true);
       loadIterationAudio(shuffled, xOpt);
     }
   }, [config, setupIteration, loadIterationAudio]);
@@ -224,14 +225,14 @@ export default function TestRunner({ configUrl }) {
       // Next repeat of same test
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      const { shuffled, xOpt } = setupIteration(test);
+      const { shuffled, xOpt } = setupIteration(test, false);
       loadIterationAudio(shuffled, xOpt);
     } else if (testStep + 1 < config.tests.length) {
       // Next test
       const nextTest = testStep + 1;
       setTestStep(nextTest);
       setRepeatStep(0);
-      const { shuffled, xOpt } = setupIteration(config.tests[nextTest]);
+      const { shuffled, xOpt } = setupIteration(config.tests[nextTest], true);
       loadIterationAudio(shuffled, xOpt);
     } else {
       // Done — show results

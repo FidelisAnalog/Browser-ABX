@@ -317,7 +317,6 @@ export class AudioEngine {
     if (wasPlaying && prevTrack !== index) {
       const position = this.currentTime;
 
-      console.log('[AudioEngine] selectTrack: duckingEnabled=%s, duckDuration=%s', this._duckingEnabled, this._duckDuration);
       if (this._duckingEnabled) {
         const now = this._context.currentTime;
         this._duckGainNode.gain.cancelScheduledValues(now);
