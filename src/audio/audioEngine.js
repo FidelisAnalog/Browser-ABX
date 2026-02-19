@@ -4,6 +4,10 @@
  *
  * This is a plain JS class that acts as an external store for React components.
  * Components subscribe to state slices via useSyncExternalStore (see useEngineState.js).
+ *
+ * Pause uses playbackRate=0 (not context.suspend) so the context clock keeps running
+ * and resume is synchronous with no hardware re-acquisition cost.
+ * Seek while playing overlaps the new source before stopping the old to avoid gaps.
  */
 
 /**
@@ -27,7 +31,7 @@ export class AudioEngine {
     probe.close();
 
     // Create context at source file sample rate
-    this._context = new AudioContext({ sampleRate });
+    this._context = new AudioContext({ sampleRate, latencyHint: 'interactive' });
     this._contextRate = this._context.sampleRate;
 
     // Gain node for volume control
@@ -45,6 +49,7 @@ export class AudioEngine {
     this._transportState = 'stopped';
     this._playStartTime = 0;   // audioContext.currentTime when play started
     this._playOffset = 0;      // Offset into buffer when play started
+    this._pauseTime = 0;       // context.currentTime when paused (for resume offset calc)
 
     // Loop region (in seconds)
     this._loopStart = 0;
@@ -134,6 +139,7 @@ export class AudioEngine {
     if (this._transportState === 'paused') {
       return this._playOffset;
     }
+    // Playing — context.currentTime keeps advancing (never suspended)
     const elapsed = this._context.currentTime - this._playStartTime;
     const loopDuration = this._loopEnd - this._loopStart;
     if (loopDuration <= 0) return this._playOffset;
@@ -153,10 +159,6 @@ export class AudioEngine {
   loadBuffers(buffers) {
     this._stopAnimation();
     this._stopSource();
-    // Ensure context is running (may be suspended from pause)
-    if (this._context.state === 'suspended') {
-      this._context.resume();
-    }
     this._buffers = buffers;
 
     const dur = this.getDuration();
@@ -262,9 +264,7 @@ export class AudioEngine {
     if (index < 0 || index >= this._buffers.length) return;
 
     // Eagerly resume context on user gesture so play() is instant
-    if (this._transportState !== 'paused') {
-      this.resumeContext();
-    }
+    this.resumeContext();
 
     const wasPlaying = this._transportState === 'playing';
     const prevTrack = this._selectedTrack;
@@ -273,7 +273,6 @@ export class AudioEngine {
 
     if (wasPlaying && prevTrack !== index) {
       const position = this.currentTime;
-      this._stopSource();
 
       if (this._duckingEnabled) {
         const now = this._context.currentTime;
@@ -282,13 +281,26 @@ export class AudioEngine {
         this._duckGainNode.gain.linearRampToValueAtTime(0, now + this._duckDuration);
         this._duckGainNode.gain.linearRampToValueAtTime(1, now + this._duckDuration * 2);
 
+        // Start new source after duck-down, then stop old
         setTimeout(() => {
           if (this._transportState === 'playing') {
+            const oldSource = this._activeSource;
             this._startSource(position);
+            if (oldSource) {
+              try { oldSource.stop(); } catch { /* */ }
+              oldSource.disconnect();
+            }
           }
         }, this._duckDuration * 1000);
       } else {
+        // Overlap: start new source before stopping old
+        const oldSource = this._activeSource;
+        this._activeSource = null;
         this._startSource(position);
+        if (oldSource) {
+          try { oldSource.stop(); } catch { /* */ }
+          oldSource.disconnect();
+        }
       }
     }
   }
@@ -297,6 +309,8 @@ export class AudioEngine {
 
   /**
    * Eagerly resume the AudioContext. Call on any user gesture.
+   * The context is never suspended by the engine — this only handles
+   * the browser's autoplay policy suspension.
    * @returns {Promise<void>}
    */
   resumeContext() {
@@ -315,20 +329,23 @@ export class AudioEngine {
 
   /**
    * Play — start or resume playback.
-   * If paused, resumes the frozen AudioContext (no source recreation).
-   * If stopped, creates a new source and starts from loop start.
+   * If paused (source frozen via playbackRate=0), sets rate back to 1 — synchronous, instant.
+   * If stopped, creates a new source.
    */
   play() {
     if (this._buffers.length === 0) return;
     if (this._transportState === 'playing') return;
 
     if (this._transportState === 'paused' && this._activeSource) {
-      // Resume from pause — just unfreeze the context, no new source needed
+      // Resume from pause — just unfreeze the source. Synchronous, no node creation.
+      // Recalculate playStartTime to account for the paused duration
+      const pausedDuration = this._context.currentTime - this._pauseTime;
+      this._playStartTime += pausedDuration;
+      this._activeSource.playbackRate.value = 1;
       this._setTransportState('playing');
       this._startAnimation();
-      this._context.resume();
     } else {
-      // Start from stopped (or paused without a source, e.g. after seek-while-paused)
+      // Start from stopped (or paused without a source)
       const position =
         this._transportState === 'paused' ? this._playOffset : this._loopStart;
 
@@ -349,17 +366,22 @@ export class AudioEngine {
   }
 
   /**
-   * Pause — freeze the AudioContext, keeping the source node alive.
-   * Resume via play() unfreezes instantly with no source recreation.
+   * Pause — freeze the source via playbackRate=0.
+   * Context keeps running so currentTime stays a reliable clock.
+   * Resume is synchronous (playbackRate=1), no hardware re-acquisition.
    */
   pause() {
     if (this._transportState !== 'playing') return;
 
     this._playOffset = this.currentTime;
+    this._pauseTime = this._context.currentTime;
     this._currentTimeRef.current = this._playOffset;
     this._stopAnimation();
-    // Suspend freezes the audio graph — source stays alive for instant resume
-    this._context.suspend();
+
+    // Freeze the source — audio stops instantly, node stays alive
+    if (this._activeSource) {
+      this._activeSource.playbackRate.value = 0;
+    }
     this._setTransportState('paused');
   }
 
@@ -367,46 +389,42 @@ export class AudioEngine {
    * Stop — destroy source and reset to loop start.
    */
   stop() {
-    const wasPaused = this._transportState === 'paused';
     this._stopSource();
     this._stopAnimation();
     this._playOffset = this._loopStart;
     this._currentTimeRef.current = this._loopStart;
     this._setTransportState('stopped');
-    // If context was suspended (from pause), resume it so it's ready for next play
-    if (wasPaused) {
-      this._context.resume();
-    }
   }
 
   /**
    * Seek to a specific position.
+   * While playing: overlaps new source before stopping old (gapless).
+   * While paused/stopped: creates a paused source ready for instant resume.
    * @param {number} time
    */
   seek(time) {
     const clampedTime = Math.max(this._loopStart, Math.min(time, this._loopEnd));
 
     if (this._transportState === 'playing') {
-      // Must recreate source at new position
-      this._stopSource();
+      // Overlap: create new source at new position, then stop old
+      const oldSource = this._activeSource;
+      this._activeSource = null;
       this._startSource(clampedTime);
+      if (oldSource) {
+        try { oldSource.stop(); } catch { /* */ }
+        oldSource.disconnect();
+      }
       this._currentTimeRef.current = clampedTime;
     } else if (this._transportState === 'paused') {
-      // Destroy old source, create new one at new position, re-suspend
+      // Replace paused source with one at new position (also paused)
       this._stopSource();
-      // Resume context briefly to allow source creation, then re-suspend
-      this._context.resume().then(() => {
-        if (this._transportState === 'paused') {
-          this._startSource(clampedTime);
-          this._playOffset = clampedTime;
-          this._playStartTime = this._context.currentTime;
-          this._context.suspend();
-        }
-      });
+      this._startSource(clampedTime);
+      this._activeSource.playbackRate.value = 0;
+      this._pauseTime = this._context.currentTime;
       this._playOffset = clampedTime;
       this._currentTimeRef.current = clampedTime;
     } else {
-      // Stopped
+      // Stopped — just update offset, transition to paused
       this._playOffset = clampedTime;
       this._currentTimeRef.current = clampedTime;
       this._setTransportState('paused');
@@ -447,6 +465,7 @@ export class AudioEngine {
   _stopSource() {
     if (this._activeSource) {
       try {
+        this._activeSource.playbackRate.value = 1; // Ensure rate is normal before stopping
         this._activeSource.stop();
       } catch {
         // Source may not have been started
