@@ -43,22 +43,21 @@ const LoopRegion = React.memo(function LoopRegion({
   const widthRef = useRef(width);
   widthRef.current = width;
 
-  const handleMouseDown = useCallback(
-    (handle) => (e) => {
-      e.stopPropagation();
-      e.preventDefault();
+  // Shared drag logic for both mouse and touch events
+  const startDrag = useCallback(
+    (handle, startClientX, svgEl, isTouch) => {
       draggingRef.current = handle;
       dragActiveRef.current = true;
 
-      // Get SVG bounding rect for mouse position calculation
-      const svgEl = e.target.closest('svg');
       if (svgEl) {
         svgRectRef.current = svgEl.getBoundingClientRect();
       }
 
-      const handleMouseMove = (moveEvent) => {
+      const handleMove = (moveEvent) => {
         if (!draggingRef.current || !svgRectRef.current) return;
-        const x = moveEvent.clientX - svgRectRef.current.left;
+        if (isTouch) moveEvent.preventDefault(); // prevent page scroll
+        const clientX = isTouch ? moveEvent.touches[0].clientX : moveEvent.clientX;
+        const x = clientX - svgRectRef.current.left;
         const dur = durationRef.current;
         const w = widthRef.current;
         const time = Math.max(0, Math.min(w > 0 ? (x / w) * dur : 0, dur));
@@ -88,19 +87,48 @@ const LoopRegion = React.memo(function LoopRegion({
         }
       };
 
-      const handleMouseUp = () => {
+      const handleEnd = () => {
         draggingRef.current = null;
         // Clear drag flag after a microtask so the click event (which fires
         // synchronously after mouseup) still sees dragActiveRef=true
         setTimeout(() => { dragActiveRef.current = false; }, 0);
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
+        if (isTouch) {
+          window.removeEventListener('touchmove', handleMove);
+          window.removeEventListener('touchend', handleEnd);
+          window.removeEventListener('touchcancel', handleEnd);
+        } else {
+          window.removeEventListener('mousemove', handleMove);
+          window.removeEventListener('mouseup', handleEnd);
+        }
       };
 
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      if (isTouch) {
+        window.addEventListener('touchmove', handleMove, { passive: false });
+        window.addEventListener('touchend', handleEnd);
+        window.addEventListener('touchcancel', handleEnd);
+      } else {
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleEnd);
+      }
     },
     []
+  );
+
+  const handleMouseDown = useCallback(
+    (handle) => (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      startDrag(handle, e.clientX, e.target.closest('svg'), false);
+    },
+    [startDrag]
+  );
+
+  const handleTouchStart = useCallback(
+    (handle) => (e) => {
+      e.stopPropagation();
+      startDrag(handle, e.touches[0].clientX, e.target.closest('svg'), true);
+    },
+    [startDrag]
   );
 
   const xToTime = useCallback(
@@ -154,7 +182,8 @@ const LoopRegion = React.memo(function LoopRegion({
       {/* Start handle */}
       <g
         onMouseDown={handleMouseDown('start')}
-        style={{ cursor: 'ew-resize' }}
+        onTouchStart={handleTouchStart('start')}
+        style={{ cursor: 'ew-resize', touchAction: 'none' }}
       >
         {/* Hit area (wider than visual) */}
         <rect
@@ -188,7 +217,8 @@ const LoopRegion = React.memo(function LoopRegion({
       {/* End handle */}
       <g
         onMouseDown={handleMouseDown('end')}
-        style={{ cursor: 'ew-resize' }}
+        onTouchStart={handleTouchStart('end')}
+        style={{ cursor: 'ew-resize', touchAction: 'none' }}
       >
         {/* Hit area */}
         <rect
