@@ -55,6 +55,7 @@ export default function TestRunner({ configUrl }) {
   const engineRef = useRef(null);
   if (audioSampleRate && !engineRef.current) {
     engineRef.current = new AudioEngine(audioSampleRate);
+    window.__engine = engineRef.current; // dev console access
   }
   const engine = engineRef.current;
 
