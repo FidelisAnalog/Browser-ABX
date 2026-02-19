@@ -141,8 +141,8 @@ const Waveform = React.memo(function Waveform({
           dragActiveRef={dragActiveRef}
         />
 
-        {/* Waveform */}
-        <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.7} />
+        {/* Waveform — pointer-events: none so handle hit areas underneath receive touches */}
+        <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.7} style={{ pointerEvents: 'none' }} />
 
         {/* Center line */}
         <line
@@ -152,6 +152,7 @@ const Waveform = React.memo(function Waveform({
           y2={WAVEFORM_HEIGHT / 2}
           stroke="#bdbdbd"
           strokeWidth={0.5}
+          style={{ pointerEvents: 'none' }}
         />
 
         {/* Playhead */}

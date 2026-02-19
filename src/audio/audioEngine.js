@@ -36,28 +36,7 @@ export class AudioEngine {
 
     // Gain node for volume control
     this._gainNode = this._context.createGain();
-
-    // iOS/iPadOS silent mode workaround: route audio through MediaStreamDestination
-    // → <audio> element instead of context.destination. iOS treats <audio> as media
-    // playback which ignores the hardware silent switch. Only one output path to
-    // avoid echo from differing latencies.
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-    if (isIOS) {
-      try {
-        const streamDest = this._context.createMediaStreamDestination();
-        this._gainNode.connect(streamDest);
-        this._silentModeAudio = document.createElement('audio');
-        this._silentModeAudio.srcObject = streamDest.stream;
-        this._silentModeAudio.play().catch(() => { /* user gesture required — handled by resumeContext */ });
-      } catch {
-        // Fallback: connect directly if MediaStreamDestination unavailable
-        this._gainNode.connect(this._context.destination);
-      }
-    } else {
-      this._gainNode.connect(this._context.destination);
-    }
+    this._gainNode.connect(this._context.destination);
 
     // Duck gain node — separate from volume so ducking doesn't affect the volume slider
     this._duckGainNode = this._context.createGain();
@@ -376,19 +355,11 @@ export class AudioEngine {
    */
   resumeContext() {
     if (this._context.state === 'running') {
-      // Ensure silent-mode audio element is also playing
-      if (this._silentModeAudio && this._silentModeAudio.paused) {
-        this._silentModeAudio.play().catch(() => {});
-      }
       return Promise.resolve();
     }
     if (!this._resumePromise) {
       this._resumePromise = this._context.resume().then(() => {
         this._resumePromise = null;
-        // Kick the silent-mode audio element now that we have a user gesture
-        if (this._silentModeAudio && this._silentModeAudio.paused) {
-          this._silentModeAudio.play().catch(() => {});
-        }
       });
     }
     return this._resumePromise;
