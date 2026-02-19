@@ -65,7 +65,7 @@ export class AudioEngine {
     // Ducking
     this._duckingEnabled = false;
     this._duckingForced = false;
-    this._duckDuration = 0.05; // 50ms each way → 100ms total
+    this._duckDuration = 0.25; // 250ms each way → 500ms total
 
     // Playhead animation — ref-like object, updated via rAF
     this._currentTimeRef = { current: 0 };
@@ -317,6 +317,7 @@ export class AudioEngine {
     if (wasPlaying && prevTrack !== index) {
       const position = this.currentTime;
 
+      console.log('[AudioEngine] selectTrack: duckingEnabled=%s, duckDuration=%s', this._duckingEnabled, this._duckDuration);
       if (this._duckingEnabled) {
         const now = this._context.currentTime;
         this._duckGainNode.gain.cancelScheduledValues(now);
