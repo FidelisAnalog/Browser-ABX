@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { Box, Paper } from '@mui/material';
+import { Box, Paper, IconButton, Tooltip } from '@mui/material';
 import Waveform from '../waveform/Waveform';
 import TransportControls from './TransportControls';
 import VolumeSlider from './VolumeSlider';
@@ -23,6 +23,21 @@ export default function AudioControls({ engine, channelData, duckingForced }) {
 
   const onSeek = useCallback((t) => engine?.seek(t), [engine]);
   const onLoopRegionChange = useCallback((s, e) => engine?.setLoopRegion(s, e), [engine]);
+
+  const BRACKET_HALF = 2; // seconds either side of playhead
+
+  const handleBracket = useCallback(() => {
+    if (!engine || duration <= 0) return;
+    const pos = engine.currentTime;
+    const start = Math.max(0, pos - BRACKET_HALF);
+    const end = Math.min(duration, pos + BRACKET_HALF);
+    engine.setLoopRegion(start, end);
+  }, [engine, duration]);
+
+  const handleResetBracket = useCallback(() => {
+    if (!engine || duration <= 0) return;
+    engine.setLoopRegion(0, duration);
+  }, [engine, duration]);
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
@@ -47,8 +62,34 @@ export default function AudioControls({ engine, channelData, duckingForced }) {
         flexWrap="wrap"
         gap={1}
       >
-        {/* Left: Transport */}
-        <TransportControls engine={engine} />
+        {/* Left: Transport + bracket controls */}
+        <Box display="flex" alignItems="center" gap={0.5}>
+          <TransportControls engine={engine} />
+          <Tooltip title="Bracket ±2s around playhead">
+            <span>
+              <IconButton
+                onClick={handleBracket}
+                disabled={duration <= 0}
+                size="medium"
+                sx={{ fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1.1rem', px: 0.5, minWidth: 36 }}
+              >
+                [ ]
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Reset loop to full range">
+            <span>
+              <IconButton
+                onClick={handleResetBracket}
+                disabled={duration <= 0 || (loopRegion[0] <= 0.001 && loopRegion[1] >= duration - 0.001)}
+                size="medium"
+                sx={{ fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1.1rem', px: 0.5, minWidth: 36 }}
+              >
+                ] [
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
 
         {/* Center: Ducking toggle */}
         <DuckingToggle engine={engine} forced={duckingForced} />
