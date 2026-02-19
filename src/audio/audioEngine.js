@@ -38,6 +38,19 @@ export class AudioEngine {
     this._gainNode = this._context.createGain();
     this._gainNode.connect(this._context.destination);
 
+    // iOS silent mode workaround: route audio through a MediaStreamDestination
+    // into an <audio> element. iOS treats <audio> as media playback which
+    // ignores the hardware silent switch.
+    try {
+      const streamDest = this._context.createMediaStreamDestination();
+      this._gainNode.connect(streamDest);
+      this._silentModeAudio = document.createElement('audio');
+      this._silentModeAudio.srcObject = streamDest.stream;
+      this._silentModeAudio.play().catch(() => { /* user gesture required — handled by resumeContext */ });
+    } catch {
+      // createMediaStreamDestination not supported — silent mode workaround unavailable
+    }
+
     // Duck gain node — separate from volume so ducking doesn't affect the volume slider
     this._duckGainNode = this._context.createGain();
     this._duckGainNode.connect(this._gainNode);
@@ -355,11 +368,19 @@ export class AudioEngine {
    */
   resumeContext() {
     if (this._context.state === 'running') {
+      // Ensure silent-mode audio element is also playing
+      if (this._silentModeAudio && this._silentModeAudio.paused) {
+        this._silentModeAudio.play().catch(() => {});
+      }
       return Promise.resolve();
     }
     if (!this._resumePromise) {
       this._resumePromise = this._context.resume().then(() => {
         this._resumePromise = null;
+        // Kick the silent-mode audio element now that we have a user gesture
+        if (this._silentModeAudio && this._silentModeAudio.paused) {
+          this._silentModeAudio.play().catch(() => {});
+        }
       });
     }
     return this._resumePromise;

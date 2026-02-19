@@ -8,8 +8,11 @@ import React, { useRef, useCallback } from 'react';
 
 const REGION_COLOR = 'rgba(255, 152, 0, 0.15)';
 const HANDLE_COLOR = '#f57c00';
-const HANDLE_WIDTH = 6;
 const HANDLE_TRIANGLE_SIZE = 8;
+// Touch hit area: 44px total, biased outward from the loop region
+// so start and end targets don't overlap when cursors are close
+const HIT_OUTWARD = 40;  // px extending away from loop region
+const HIT_INWARD = 4;    // px extending into loop region
 
 /**
  * @param {object} props
@@ -185,11 +188,11 @@ const LoopRegion = React.memo(function LoopRegion({
         onTouchStart={handleTouchStart('start')}
         style={{ cursor: 'ew-resize', touchAction: 'none' }}
       >
-        {/* Hit area (wider than visual) */}
+        {/* Hit area — biased left (outward from loop region) */}
         <rect
-          x={startX - HANDLE_WIDTH}
+          x={startX - HIT_OUTWARD}
           y={0}
-          width={HANDLE_WIDTH * 2}
+          width={HIT_OUTWARD + HIT_INWARD}
           height={height}
           fill="transparent"
         />
@@ -220,11 +223,11 @@ const LoopRegion = React.memo(function LoopRegion({
         onTouchStart={handleTouchStart('end')}
         style={{ cursor: 'ew-resize', touchAction: 'none' }}
       >
-        {/* Hit area */}
+        {/* Hit area — biased right (outward from loop region) */}
         <rect
-          x={endX - HANDLE_WIDTH}
+          x={endX - HIT_INWARD}
           y={0}
-          width={HANDLE_WIDTH * 2}
+          width={HIT_OUTWARD + HIT_INWARD}
           height={height}
           fill="transparent"
         />
