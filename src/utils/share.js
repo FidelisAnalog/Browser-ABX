@@ -74,19 +74,20 @@ export function encodeTestResults(allTestStats, config) {
     bytes.push(testNameToOrd[stats.name] || 0);
 
     if (stats.matrix) {
-      // ABX: encode correct and incorrect counts
-      bytes.push(stats.totalCorrect & 0xff);
-      bytes.push((stats.totalCorrect >> 8) & 0xff);
-      bytes.push(stats.totalIncorrect & 0xff);
-      bytes.push((stats.totalIncorrect >> 8) & 0xff);
+      // ABX: encode full confusion matrix
+      for (const correctName of stats.optionNames) {
+        bytes.push(optionNameToOrd[correctName] || 0);
+        for (const selectedName of stats.optionNames) {
+          bytes.push(optionNameToOrd[selectedName] || 0);
+          bytes.push(stats.matrix[correctName]?.[selectedName] ?? 0);
+        }
+      }
     } else {
       // AB: encode count per option
       for (const opt of stats.options) {
         bytes.push(optionNameToOrd[opt.name] || 0);
-        bytes.push(opt.count & 0xff);
-        bytes.push((opt.count >> 8) & 0xff);
+        bytes.push(opt.count);
       }
-      bytes.push(0xff); // Separator
     }
   }
 
@@ -133,38 +134,54 @@ export function decodeTestResults(dataStr, config) {
     const testName = testNames[testOrd] || `Test ${testOrd}`;
     const testType = testTypes[testName];
 
-    if (testType && testType.toLowerCase() === 'abx') {
-      const totalCorrect = bytes[i] | (bytes[i + 1] << 8);
-      i += 2;
-      const totalIncorrect = bytes[i] | (bytes[i + 1] << 8);
-      i += 2;
+    if (testType && (testType.toLowerCase() === 'abx' || testType.toLowerCase() === 'abx+c')) {
+      // ABX: decode full confusion matrix
+      const test = config.tests[testOrd];
+      const nOptions = test ? test.options.length : 0;
+      const testOptionNames = [];
+      const matrix = {};
+      let totalCorrect = 0;
+      let totalIncorrect = 0;
 
-      const testOptionNames = config.tests[testOrd]
-        ? config.tests[testOrd].options.map((o) => (typeof o === 'string' ? o : o.name))
-        : [];
+      for (let row = 0; row < nOptions; row++) {
+        const correctName = optionNames[bytes[i++]];
+        testOptionNames.push(correctName);
+        matrix[correctName] = {};
+        for (let col = 0; col < nOptions; col++) {
+          const selectedName = optionNames[bytes[i++]];
+          const count = bytes[i++];
+          matrix[correctName][selectedName] = count;
+          if (correctName === selectedName) {
+            totalCorrect += count;
+          } else {
+            totalIncorrect += count;
+          }
+        }
+      }
 
+      const total = totalCorrect + totalIncorrect;
       stats.push({
         name: testName,
         optionNames: testOptionNames,
-        matrix: null, // Can't reconstruct full matrix from aggregates
+        matrix,
         totalCorrect,
         totalIncorrect,
-        total: totalCorrect + totalIncorrect,
-        pValue: abxPValue(totalCorrect, totalIncorrect, testOptionNames.length),
+        total,
+        pValue: total > 0 ? binomialPValue(totalCorrect, total, 1 / nOptions) : 1,
       });
     } else {
-      // AB test
+      // AB: decode option counts
+      const test = config.tests[testOrd];
+      const nOptions = test ? test.options.length : 0;
       const options = [];
-      while (i < bytes.length && bytes[i] !== 0xff) {
+      for (let j = 0; j < nOptions; j++) {
         const optOrd = bytes[i++];
-        const count = bytes[i] | (bytes[i + 1] << 8);
-        i += 2;
+        const count = bytes[i++];
         options.push({
           name: optionNames[optOrd] || `Option ${optOrd}`,
           count,
         });
       }
-      if (i < bytes.length) i++; // Skip separator
 
       const total = options.reduce((a, o) => a + o.count, 0);
       options.forEach((o) => {
@@ -180,9 +197,4 @@ export function decodeTestResults(dataStr, config) {
   }
 
   return stats;
-}
-
-function abxPValue(correct, incorrect, nOptions) {
-  const total = correct + incorrect;
-  return total > 0 ? binomialPValue(correct, total, 1 / nOptions) : 1;
 }

@@ -65,7 +65,11 @@ function normalizeConfig(raw) {
 
   // Normalize tests
   const tests = raw.tests.map((test) => {
-    if (!test.testType) throw new Error(`Test "${test.name}" must have a "testType" (AB or ABX)`);
+    if (!test.testType) throw new Error(`Test "${test.name}" must have a "testType" (AB, ABX, or ABX+C)`);
+    const validTypes = ['ab', 'abx', 'abx+c'];
+    if (!validTypes.includes(test.testType.toLowerCase())) {
+      throw new Error(`Test "${test.name}" has unsupported testType "${test.testType}". Valid types: AB, ABX, ABX+C`);
+    }
     if (!test.options || test.options.length === 0) {
       throw new Error(`Test "${test.name}" must have "options"`);
     }

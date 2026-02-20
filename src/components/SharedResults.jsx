@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Box, CircularProgress, Container, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Container, Link, Typography } from '@mui/material';
 import { parseConfig } from '../utils/config';
 import { decodeTestResults } from '../utils/share';
 import Results from './Results';
@@ -47,6 +47,12 @@ export default function SharedResults({ configUrl, resultsParam }) {
     );
   }
 
+  const testUrl = (() => {
+    const u = new URL(window.location.href);
+    u.searchParams.delete('results');
+    return u.toString();
+  })();
+
   return (
     <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
       <Container maxWidth="md">
@@ -56,6 +62,18 @@ export default function SharedResults({ configUrl, resultsParam }) {
           config={config}
           precomputedStats={stats}
         />
+        <Box textAlign="center" mt={3}>
+          <Button
+            component={Link}
+            href={testUrl}
+            target="_blank"
+            variant="contained"
+            color="secondary"
+            size="large"
+          >
+            Take the Test
+          </Button>
+        </Box>
       </Container>
     </Box>
   );

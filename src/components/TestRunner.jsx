@@ -21,6 +21,12 @@ import ABXTest from './ABXTest';
 import Results from './Results';
 import SampleRateInfo from './SampleRateInfo';
 
+/** Test type is ABX-family (ABX or ABX+C). */
+function isAbxType(testType) {
+  const t = testType.toLowerCase();
+  return t === 'abx' || t === 'abx+c';
+}
+
 /**
  * @param {object} props
  * @param {string} props.configUrl - URL to YAML config
@@ -45,6 +51,9 @@ export default function TestRunner({ configUrl }) {
   const [currentOptions, setCurrentOptions] = useState([]);
   const shuffledOptionsRef = useRef([]);
   const [xOption, setXOption] = useState(null);
+
+  // Iteration timing
+  const iterationStartRef = useRef(null);
 
   // Get current test config (for crossfade settings)
   const currentTest = config && testStep >= 0 && testStep < config.tests.length
@@ -143,7 +152,7 @@ export default function TestRunner({ configUrl }) {
       return decoded ? decoded.samples[0] : new Float32Array(0);
     });
     // For ABX, add the first option again (X is always one of them — same waveform shape)
-    if (test.testType.toLowerCase() === 'abx' && ch0.length > 0) {
+    if (isAbxType(test.testType) && ch0.length > 0) {
       ch0.push(ch0[0]);
     }
     return ch0;
@@ -177,7 +186,7 @@ export default function TestRunner({ configUrl }) {
     setCurrentOptions(ordered);
 
     let xOpt = null;
-    if (test.testType.toLowerCase() === 'abx') {
+    if (isAbxType(test.testType)) {
       const randomOption = ordered[Math.floor(Math.random() * ordered.length)];
       xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
       setXOption(xOpt);
@@ -185,6 +194,7 @@ export default function TestRunner({ configUrl }) {
       setXOption(null);
     }
 
+    iterationStartRef.current = Date.now();
     return { shuffled: ordered, xOpt };
   }, []);
 
@@ -199,20 +209,51 @@ export default function TestRunner({ configUrl }) {
     }
   }, [config, setupIteration, loadIterationAudio]);
 
+  // Restart test (from results screen) — reuses cached audio
+  const handleRestart = useCallback(() => {
+    // Reset results to fresh empty state
+    setResults(
+      config.tests.map((test) => ({
+        name: test.name,
+        testType: test.testType,
+        optionNames: test.options.map((o) => o.name),
+        nOptions: test.options.length,
+        ...(test.testType.toLowerCase() === 'ab'
+          ? { userSelections: [] }
+          : { userSelectionsAndCorrects: [] }),
+      }))
+    );
+    setTestStep(0);
+    setRepeatStep(0);
+    if (config.tests.length > 0) {
+      const { shuffled, xOpt } = setupIteration(config.tests[0], true);
+      loadIterationAudio(shuffled, xOpt);
+    }
+  }, [config, setupIteration, loadIterationAudio]);
+
   // Handle AB test submission
   const handleAbSubmit = (selectedOption) => {
+    const now = Date.now();
     const newResults = JSON.parse(JSON.stringify(results));
-    newResults[testStep].userSelections.push({ ...selectedOption });
+    newResults[testStep].userSelections.push({
+      ...selectedOption,
+      startedAt: iterationStartRef.current,
+      finishedAt: now,
+    });
     setResults(newResults);
     advanceStep(newResults);
   };
 
   // Handle ABX test submission
-  const handleAbxSubmit = (selectedOption, correctOption) => {
+  const handleAbxSubmit = (selectedOption, correctOption, confidence) => {
+    const now = Date.now();
     const newResults = JSON.parse(JSON.stringify(results));
     newResults[testStep].userSelectionsAndCorrects.push({
       selectedOption: { ...selectedOption },
       correctOption: { ...correctOption },
+      confidence: confidence || null,
+      startedAt: iterationStartRef.current,
+      finishedAt: now,
     });
     setResults(newResults);
     advanceStep(newResults);
@@ -290,6 +331,7 @@ export default function TestRunner({ configUrl }) {
             description={config.results?.description}
             results={results}
             config={config}
+            onRestart={handleRestart}
           />
         </Container>
       </Box>
@@ -317,7 +359,7 @@ export default function TestRunner({ configUrl }) {
     );
   }
 
-  if (test.testType.toLowerCase() === 'abx') {
+  if (isAbxType(test.testType)) {
     return (
       <ABXTest
         key={testStep}
@@ -331,6 +373,7 @@ export default function TestRunner({ configUrl }) {
         crossfadeForced={crossfadeForced}
         totalIterations={test.repeat}
         iterationResults={results[testStep].userSelectionsAndCorrects}
+        showConfidence={test.testType.toLowerCase() === 'abx+c'}
         onSubmit={handleAbxSubmit}
       />
     );

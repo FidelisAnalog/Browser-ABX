@@ -256,7 +256,7 @@ export function computeAbTagStats(allTestStats, config) {
       .join(' vs ');
 
     if (!groups[tags]) {
-      groups[tags] = { name: tags, tagNames: [], counts: {} };
+      groups[tags] = { name: tags, tagNames: [], counts: {}, testCount: 0 };
       // Initialize counts for each tag
       for (const opt of stats.options) {
         const tag = tagMap[opt.name] || opt.name;
@@ -266,6 +266,8 @@ export function computeAbTagStats(allTestStats, config) {
         }
       }
     }
+
+    groups[tags].testCount++;
 
     // Accumulate counts
     for (const opt of stats.options) {
@@ -289,6 +291,7 @@ export function computeAbTagStats(allTestStats, config) {
       })),
       total,
       pValue,
+      testCount: group.testCount,
     };
   });
 }
@@ -321,9 +324,11 @@ export function computeAbxTagStats(allTestStats, config) {
         totalCorrect: 0,
         totalIncorrect: 0,
         total: 0,
+        testCount: 0,
       };
     }
 
+    groups[tags].testCount++;
     groups[tags].totalCorrect += stats.totalCorrect;
     groups[tags].totalIncorrect += stats.totalIncorrect;
     groups[tags].total += stats.total;

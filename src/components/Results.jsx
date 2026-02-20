@@ -7,6 +7,7 @@ import {
   Box, Button, Container, Paper, Tooltip, Typography,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import ReplayIcon from '@mui/icons-material/Replay';
 import ReactMarkdown from 'react-markdown';
 import ABStats from './ABStats';
 import ABXStats from './ABXStats';
@@ -24,8 +25,9 @@ import { createShareUrl } from '../utils/share';
  * @param {object[]} props.results - Raw results from TestRunner
  * @param {object} props.config - Full config
  * @param {object[]} [props.precomputedStats] - Pre-computed stats (for shared results)
+ * @param {() => void} [props.onRestart] - Callback to restart the test (without re-downloading audio)
  */
-export default function Results({ description, results, config, precomputedStats }) {
+export default function Results({ description, results, config, precomputedStats, onRestart }) {
   const [copied, setCopied] = useState(false);
 
   const { abStats, abxStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
@@ -47,7 +49,7 @@ export default function Results({ description, results, config, precomputedStats
     for (const result of results) {
       if (result.testType.toLowerCase() === 'ab') {
         ab.push(computeAbStats(result.name, result.optionNames, result.userSelections));
-      } else if (result.testType.toLowerCase() === 'abx') {
+      } else if (result.testType.toLowerCase() === 'abx' || result.testType.toLowerCase() === 'abx+c') {
         abx.push(computeAbxStats(result.name, result.optionNames, result.userSelectionsAndCorrects));
       }
     }
@@ -97,9 +99,9 @@ export default function Results({ description, results, config, precomputedStats
         <ABTagStats stats={abTagStats} />
         <ABXTagStats stats={abxTagStats} />
 
-        {/* Share URL */}
-        {shareUrl && (
-          <Box mt={3} textAlign="center">
+        {/* Share URL + Restart */}
+        <Box mt={3} display="flex" justifyContent="center" gap={2}>
+          {shareUrl && (
             <Tooltip title={copied ? 'Copied!' : 'Copy share link'}>
               <Button
                 variant="outlined"
@@ -109,8 +111,17 @@ export default function Results({ description, results, config, precomputedStats
                 {copied ? 'Copied!' : 'Copy Share Link'}
               </Button>
             </Tooltip>
-          </Box>
-        )}
+          )}
+          {onRestart && (
+            <Button
+              variant="outlined"
+              startIcon={<ReplayIcon />}
+              onClick={onRestart}
+            >
+              Take Again
+            </Button>
+          )}
+        </Box>
       </Box>
     </Paper>
   );

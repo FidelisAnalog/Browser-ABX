@@ -48,7 +48,7 @@ export default function ABTest({
           <Paper>
             <Box p={2.5}>
               <Box mb={4}>
-                <Typography variant="h4" textAlign="center">
+                <Typography variant="h5" textAlign="center">
                   {name}
                 </Typography>
                 {description && (

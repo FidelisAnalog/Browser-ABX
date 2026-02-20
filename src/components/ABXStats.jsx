@@ -1,6 +1,6 @@
 /**
  * ABXStats — table displaying ABX test results.
- * Shows confusion matrix and correct/incorrect summary with p-value.
+ * Shows confusion matrix with A/B labels and correct/incorrect summary with p-value.
  */
 
 import React from 'react';
@@ -9,6 +9,8 @@ import {
   TableHead, TableRow, Tooltip, Typography,
 } from '@mui/material';
 import Label from './Label';
+
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 /**
  * @param {object} props
@@ -19,25 +21,38 @@ export default function ABXStats({ stats }) {
     <Box mb={2}>
       <Typography variant="h6" gutterBottom>{stats.name}</Typography>
 
-      {/* Confusion matrix (if available) */}
+      {/* Confusion matrix */}
       {stats.matrix && stats.optionNames && (
         <Box mb={1}>
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Correct \ Selected</TableCell>
+                  <TableCell />
+                  <TableCell
+                    colSpan={stats.optionNames.length}
+                    align="left"
+                    sx={{ fontWeight: 'bold' }}
+                  >
+                    You selected
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 'bold' }}>X is</TableCell>
                   {stats.optionNames.map((name, i) => (
                     <TableCell key={name} align="center">
-                      <Label color={i === 0 ? 'primary' : 'secondary'}>{name}</Label>
+                      <Label color="secondary">{LETTERS[i]}</Label>
                     </TableCell>
                   ))}
                 </TableRow>
               </TableHead>
               <TableBody>
-                {stats.optionNames.map((correctName) => (
+                {stats.optionNames.map((correctName, rowIdx) => (
                   <TableRow key={correctName}>
-                    <TableCell>{correctName}</TableCell>
+                    <TableCell>
+                      <Label color="secondary">{LETTERS[rowIdx]}</Label>
+                      {' '}{correctName}
+                    </TableCell>
                     {stats.optionNames.map((selectedName) => (
                       <TableCell
                         key={selectedName}
@@ -46,7 +61,11 @@ export default function ABXStats({ stats }) {
                           fontWeight: correctName === selectedName ? 'bold' : 'normal',
                         }}
                       >
-                        {stats.matrix[correctName]?.[selectedName] ?? 0}
+                        <Tooltip title={selectedName}>
+                          <Box component="span">
+                            {stats.matrix[correctName]?.[selectedName] ?? 0}
+                          </Box>
+                        </Tooltip>
                       </TableCell>
                     ))}
                   </TableRow>
@@ -57,32 +76,33 @@ export default function ABXStats({ stats }) {
         </Box>
       )}
 
-      {/* Summary */}
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableBody>
-            <TableRow>
-              <TableCell>Correct</TableCell>
-              <TableCell align="right">{stats.totalCorrect}</TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell>Incorrect</TableCell>
-              <TableCell align="right">{stats.totalIncorrect}</TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell>Total</TableCell>
-              <TableCell align="right">{stats.total}</TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      <Box mt={0.5}>
-        <Tooltip title="Probability of getting this many or more correct identifications by chance. Lower values suggest the listener can reliably distinguish the options.">
-          <Typography variant="caption" color="text.secondary">
-            p-value: {stats.pValue.toFixed(4)}
-          </Typography>
-        </Tooltip>
+      {/* P-value / Correct / Incorrect summary */}
+      <Box mt={1}>
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 'bold' }}>
+                  <Box display="inline" mr={1}>p-value</Box>
+                  <Tooltip title="Probability of getting this many or more correct identifications by chance. Lower values suggest the listener can reliably distinguish the options.">
+                    <Box display="inline">
+                      <Label color="primary">?</Label>
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Correct</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Incorrect</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              <TableRow>
+                <TableCell>{stats.pValue.toPrecision(3)}</TableCell>
+                <TableCell>{stats.totalCorrect}</TableCell>
+                <TableCell>{stats.totalIncorrect}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Box>
     </Box>
   );

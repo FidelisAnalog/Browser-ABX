@@ -11,12 +11,13 @@ import ABXStats from './ABXStats';
  * @param {object[]} props.stats - Array of aggregated ABX tag stats
  */
 export default function ABXTagStats({ stats }) {
-  if (!stats || stats.length === 0) return null;
+  const multi = (stats || []).filter((s) => s.testCount >= 2);
+  if (multi.length === 0) return null;
 
   return (
     <Box mt={3}>
       <Typography variant="h5" gutterBottom>Aggregated Results</Typography>
-      {stats.map((s, i) => (
+      {multi.map((s, i) => (
         <ABXStats key={i} stats={s} />
       ))}
     </Box>
