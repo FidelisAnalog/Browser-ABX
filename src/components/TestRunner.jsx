@@ -109,7 +109,7 @@ export default function TestRunner({ configUrl }) {
             return {
               name: test.name,
               testType: test.testType,
-              optionNames: test.options.map((o) => o.name),
+              optionNames: null,
               nOptions: test.options.length,
               ...(t === 'ab'
                 ? { userSelections: [] }
@@ -205,12 +205,23 @@ export default function TestRunner({ configUrl }) {
     }
   }, []);
 
-  // Setup test iteration — shuffle once on first iteration, reuse on repeats
-  const setupIteration = useCallback((test, isNewTest) => {
+  // Setup test iteration — shuffle once on first iteration, reuse on repeats.
+  // When a new test starts, records the shuffled option order in results so the
+  // confusion matrix A/B mapping always matches what the user saw.
+  const setupIteration = useCallback((test, testIndex, isNewTest) => {
     const shouldReshuffle = isNewTest || test.testType.toLowerCase() === 'ab';
     const ordered = shouldReshuffle ? shuffle(test.options) : shuffledOptionsRef.current;
     if (isNewTest) shuffledOptionsRef.current = ordered;
     setCurrentOptions(ordered);
+
+    if (isNewTest) {
+      const names = ordered.map((o) => o.name);
+      setResults((prev) => {
+        const r = JSON.parse(JSON.stringify(prev));
+        r[testIndex].optionNames = names;
+        return r;
+      });
+    }
 
     let xOpt = null;
     let triplet = null;
@@ -249,32 +260,31 @@ export default function TestRunner({ configUrl }) {
     setTestStep(0);
     setRepeatStep(0);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt, triplet } = setupIteration(config.tests[0], true);
+      const { shuffled, xOpt, triplet } = setupIteration(config.tests[0], 0, true);
       loadIterationAudio(shuffled, xOpt, triplet);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
   // Restart test (from results screen) — reuses cached audio
   const handleRestart = useCallback(() => {
-    // Reset results to fresh empty state
-    setResults(
-      config.tests.map((test) => {
-        const t = test.testType.toLowerCase();
-        return {
-          name: test.name,
-          testType: test.testType,
-          optionNames: test.options.map((o) => o.name),
-          nOptions: test.options.length,
-          ...(t === 'ab'
-            ? { userSelections: [] }
-            : { userSelectionsAndCorrects: [] }),
-        };
-      })
-    );
     setTestStep(0);
     setRepeatStep(0);
+    // Reset results and update optionNames to shuffled order for first test
+    const freshResults = config.tests.map((test) => {
+      const t = test.testType.toLowerCase();
+      return {
+        name: test.name,
+        testType: test.testType,
+        optionNames: null,
+        nOptions: test.options.length,
+        ...(t === 'ab'
+          ? { userSelections: [] }
+          : { userSelectionsAndCorrects: [] }),
+      };
+    });
+    setResults(freshResults);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt, triplet } = setupIteration(config.tests[0], true);
+      const { shuffled, xOpt, triplet } = setupIteration(config.tests[0], 0, true);
       loadIterationAudio(shuffled, xOpt, triplet);
     }
   }, [config, setupIteration, loadIterationAudio]);
@@ -315,14 +325,14 @@ export default function TestRunner({ configUrl }) {
       // Next repeat of same test
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      const { shuffled, xOpt, triplet } = setupIteration(test, false);
+      const { shuffled, xOpt, triplet } = setupIteration(test, testStep, false);
       loadIterationAudio(shuffled, xOpt, triplet);
     } else if (testStep + 1 < config.tests.length) {
       // Next test
       const nextTest = testStep + 1;
       setTestStep(nextTest);
       setRepeatStep(0);
-      const { shuffled, xOpt, triplet } = setupIteration(config.tests[nextTest], true);
+      const { shuffled, xOpt, triplet } = setupIteration(config.tests[nextTest], nextTest, true);
       loadIterationAudio(shuffled, xOpt, triplet);
     } else {
       // Done — show results
