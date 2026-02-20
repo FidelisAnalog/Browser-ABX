@@ -9,6 +9,7 @@ import { Box, Button, Container, Divider, Paper, Typography } from '@mui/materia
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
+import { useHotkeys } from '../audio/useHotkeys';
 
 /**
  * @param {object} props
@@ -51,6 +52,8 @@ export default function ABTest({
     engine?.stop();
     onSubmit(options[answer]);
   };
+
+  useHotkeys({ engine, trackCount: options.length, onTrackSelect: handleTrackSelect, onSubmit: handleSubmit });
 
   return (
     <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>

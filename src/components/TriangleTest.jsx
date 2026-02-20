@@ -13,6 +13,7 @@ import { Box, Button, Container, Divider, Paper, Typography } from '@mui/materia
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
+import { useHotkeys } from '../audio/useHotkeys';
 
 /**
  * @param {object} props
@@ -81,6 +82,8 @@ export default function TriangleTest({
   };
 
   const canSubmit = answer !== null;
+
+  useHotkeys({ engine, trackCount, onTrackSelect: handleTrackSelect, onSubmit: handleSubmitClick });
 
   return (
     <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
