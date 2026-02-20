@@ -207,7 +207,8 @@ export default function TestRunner({ configUrl }) {
 
   // Setup test iteration — shuffle once on first iteration, reuse on repeats
   const setupIteration = useCallback((test, isNewTest) => {
-    const ordered = isNewTest ? shuffle(test.options) : shuffledOptionsRef.current;
+    const shouldReshuffle = isNewTest || test.testType.toLowerCase() === 'ab';
+    const ordered = shouldReshuffle ? shuffle(test.options) : shuffledOptionsRef.current;
     if (isNewTest) shuffledOptionsRef.current = ordered;
     setCurrentOptions(ordered);
 
