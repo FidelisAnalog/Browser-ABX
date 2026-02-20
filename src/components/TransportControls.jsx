@@ -8,7 +8,7 @@ import { Box, IconButton, Tooltip } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
-import { useTransportState } from '../audio/useEngineState';
+import { useTransportState, useSelectedTrack } from '../audio/useEngineState';
 
 /**
  * @param {object} props
@@ -17,6 +17,8 @@ import { useTransportState } from '../audio/useEngineState';
  */
 export default function TransportControls({ engine, disabled = false }) {
   const transportState = useTransportState(engine);
+  const selectedTrack = useSelectedTrack(engine);
+  const noTrack = selectedTrack < 0;
 
   return (
     <Box display="flex" flexDirection="row" alignItems="center" gap={0.5}>
@@ -38,7 +40,7 @@ export default function TransportControls({ engine, disabled = false }) {
           <span>
             <IconButton
               onClick={() => engine?.play()}
-              disabled={disabled}
+              disabled={disabled || noTrack}
               color="primary"
               size="medium"
             >

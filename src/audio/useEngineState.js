@@ -21,7 +21,7 @@ export function useTransportState(engine) {
 /** @param {import('./audioEngine').AudioEngine|null} engine */
 export function useSelectedTrack(engine) {
   const sub = useMemo(() => engine ? engine.subscribe.bind(engine) : noop, [engine]);
-  const snap = useMemo(() => engine ? engine.getSelectedTrack.bind(engine) : () => 0, [engine]);
+  const snap = useMemo(() => engine ? engine.getSelectedTrack.bind(engine) : () => -1, [engine]);
   return useSyncExternalStore(sub, snap);
 }
 

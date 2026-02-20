@@ -42,7 +42,7 @@ export class AudioEngine {
     this._buffers = [];        // AudioBuffer per track
     this._activeSource = null; // Currently playing AudioBufferSourceNode
     this._activeSourceDest = null; // Node the active source is connected to
-    this._selectedTrack = 0;   // Index of selected A/B/X track
+    this._selectedTrack = -1;  // Index of selected A/B/X track (-1 = none)
     this._transportState = 'stopped';
     this._playStartTime = 0;   // audioContext.currentTime when play started
     this._playOffset = 0;      // Offset into buffer when play started
@@ -178,7 +178,7 @@ export class AudioEngine {
     }
     this._prevDuration = dur;
 
-    this._selectedTrack = 0;
+    this._selectedTrack = -1;
     this._transportState = 'stopped';
     this._playOffset = this._loopStart;
     this._currentTimeRef.current = this._loopStart;
@@ -298,6 +298,7 @@ export class AudioEngine {
   /**
    * Select a track (A=0, B=1, X=2, etc.) — switches audio source.
    * If playing, performs seamless switch (with optional crossfade).
+   * If stopped, starts playback on the selected track.
    * Eagerly resumes AudioContext on user gesture.
    * @param {number} index
    */
@@ -312,7 +313,12 @@ export class AudioEngine {
     this._selectedTrack = index;
     this._notify();
 
-    if (wasPlaying && prevTrack !== index) {
+    if (!wasPlaying) {
+      this.play();
+      return;
+    }
+
+    if (prevTrack !== index) {
       const position = this.currentTime;
 
       if (this._crossfadeEnabled) {
@@ -398,6 +404,7 @@ export class AudioEngine {
    */
   play() {
     if (this._buffers.length === 0) return;
+    if (this._selectedTrack < 0) return;
     if (this._transportState === 'playing') return;
 
     const position =

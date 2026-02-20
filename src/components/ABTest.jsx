@@ -4,7 +4,7 @@
  * Track selection, waveform, transport, and submit.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Button, Container, Divider, Paper, Typography } from '@mui/material';
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
@@ -32,12 +32,24 @@ export default function ABTest({
   onSubmit,
 }) {
   const selectedTrack = useSelectedTrack(engine);
+  const [answer, setAnswer] = useState(null);
 
-  const selectedLabel = String.fromCharCode(65 + selectedTrack);
+  const handleTrackSelect = (index) => {
+    engine?.selectTrack(index);
+    setAnswer(index);
+  };
+
+  const getAnswerLabel = () => {
+    if (answer === null) return '?';
+    return String.fromCharCode(65 + answer);
+  };
+
+  const canSubmit = answer !== null;
 
   const handleSubmit = () => {
+    if (!canSubmit) return;
     engine?.stop();
-    onSubmit(options[selectedTrack]);
+    onSubmit(options[answer]);
   };
 
   return (
@@ -68,7 +80,7 @@ export default function ABTest({
               <TrackSelector
                 trackCount={options.length}
                 selectedTrack={selectedTrack}
-                onSelect={(i) => engine?.selectTrack(i)}
+                onSelect={handleTrackSelect}
               />
 
               {/* Submit */}
@@ -77,8 +89,10 @@ export default function ABTest({
                   variant="outlined"
                   color="primary"
                   onClick={handleSubmit}
+                  disabled={!canSubmit}
+                  sx={{ textTransform: 'none' }}
                 >
-                  Select {selectedLabel}
+                  Select {getAnswerLabel()}
                 </Button>
               </Box>
             </Box>
