@@ -28,10 +28,10 @@ export default function ABXStats({ stats }) {
       {stats.matrix && stats.optionNames && (
         <Box mb={1}>
           <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
+            <Table size="small" sx={{ tableLayout: 'fixed' }}>
               <TableHead>
                 <TableRow>
-                  <TableCell />
+                  <TableCell sx={{ width: '50%' }} />
                   <TableCell
                     colSpan={stats.optionNames.length}
                     align="left"
@@ -41,9 +41,9 @@ export default function ABXStats({ stats }) {
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold' }}>X is</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '50%' }}>X is</TableCell>
                   {stats.optionNames.map((name, i) => (
-                    <TableCell key={name} align="center">
+                    <TableCell key={name}>
                       <Label color="secondary">{LETTERS[i]}</Label>
                     </TableCell>
                   ))}
@@ -59,7 +59,6 @@ export default function ABXStats({ stats }) {
                     {stats.optionNames.map((selectedName) => (
                       <TableCell
                         key={selectedName}
-                        align="center"
                         sx={{
                           fontWeight: correctName === selectedName ? 'bold' : 'normal',
                         }}
@@ -82,10 +81,10 @@ export default function ABXStats({ stats }) {
       {/* P-value / Correct / Incorrect summary */}
       <Box mt={1}>
         <TableContainer component={Paper} variant="outlined">
-          <Table size="small">
+          <Table size="small" sx={{ tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 'bold' }}>
+                <TableCell sx={{ fontWeight: 'bold', width: '50%' }}>
                   <Box display="inline" mr={1}>p-value</Box>
                   <Tooltip title="Probability of getting this many or more correct identifications by chance. Lower values suggest the listener can reliably distinguish the options.">
                     <Box display="inline">
@@ -93,8 +92,8 @@ export default function ABXStats({ stats }) {
                     </Box>
                   </Tooltip>
                 </TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Correct</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Incorrect</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Correct</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Incorrect</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -107,6 +106,34 @@ export default function ABXStats({ stats }) {
           </Table>
         </TableContainer>
       </Box>
+
+      {/* Confidence breakdown (ABX+C only) */}
+      {stats.confidenceBreakdown && (
+        <Box mt={1}>
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small" sx={{ tableLayout: 'fixed' }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 'bold', width: '50%' }}>Confidence</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Correct</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Accuracy</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {stats.confidenceBreakdown.map((row) => (
+                  <TableRow key={row.level}>
+                    <TableCell>
+                      {row.level === 'sure' ? 'Sure' : row.level === 'somewhat' ? 'Somewhat sure' : 'Guessing'}
+                    </TableCell>
+                    <TableCell>{row.correct} / {row.total}</TableCell>
+                    <TableCell>{((row.correct / row.total) * 100).toFixed(0)}%</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
     </Box>
   );
 }

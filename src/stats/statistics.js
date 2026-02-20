@@ -198,15 +198,25 @@ export function computeAbxStats(name, optionNames, userSelectionsAndCorrects) {
   let totalCorrect = 0;
   let totalIncorrect = 0;
 
-  for (const { selectedOption, correctOption } of userSelectionsAndCorrects) {
+  // Confidence breakdown accumulators
+  const confidenceCounts = { sure: { correct: 0, total: 0 }, somewhat: { correct: 0, total: 0 }, guessing: { correct: 0, total: 0 } };
+  let hasConfidence = false;
+
+  for (const { selectedOption, correctOption, confidence } of userSelectionsAndCorrects) {
     if (matrix[correctOption.name]) {
       matrix[correctOption.name][selectedOption.name] =
         (matrix[correctOption.name][selectedOption.name] || 0) + 1;
     }
-    if (selectedOption.name === correctOption.name) {
+    const isCorrect = selectedOption.name === correctOption.name;
+    if (isCorrect) {
       totalCorrect++;
     } else {
       totalIncorrect++;
+    }
+    if (confidence) {
+      hasConfidence = true;
+      confidenceCounts[confidence].total++;
+      if (isCorrect) confidenceCounts[confidence].correct++;
     }
   }
 
@@ -219,6 +229,17 @@ export function computeAbxStats(name, optionNames, userSelectionsAndCorrects) {
     ? binomialPValue(totalCorrect, total, 1 / nOptions)
     : 1;
 
+  // Build confidence breakdown (only for +C variants)
+  const confidenceBreakdown = hasConfidence
+    ? ['sure', 'somewhat', 'guessing']
+        .filter((level) => confidenceCounts[level].total > 0)
+        .map((level) => ({
+          level,
+          correct: confidenceCounts[level].correct,
+          total: confidenceCounts[level].total,
+        }))
+    : null;
+
   return {
     name,
     optionNames,
@@ -227,6 +248,7 @@ export function computeAbxStats(name, optionNames, userSelectionsAndCorrects) {
     totalIncorrect,
     total,
     pValue,
+    confidenceBreakdown,
   };
 }
 
@@ -246,11 +268,21 @@ export function computeTriangleStats(name, optionNames, userSelectionsAndCorrect
   let totalCorrect = 0;
   let totalIncorrect = 0;
 
-  for (const { selectedOption, correctOption } of userSelectionsAndCorrects) {
-    if (selectedOption.name === correctOption.name) {
+  // Confidence breakdown accumulators
+  const confidenceCounts = { sure: { correct: 0, total: 0 }, somewhat: { correct: 0, total: 0 }, guessing: { correct: 0, total: 0 } };
+  let hasConfidence = false;
+
+  for (const { selectedOption, correctOption, confidence } of userSelectionsAndCorrects) {
+    const isCorrect = selectedOption.name === correctOption.name;
+    if (isCorrect) {
       totalCorrect++;
     } else {
       totalIncorrect++;
+    }
+    if (confidence) {
+      hasConfidence = true;
+      confidenceCounts[confidence].total++;
+      if (isCorrect) confidenceCounts[confidence].correct++;
     }
   }
 
@@ -262,6 +294,17 @@ export function computeTriangleStats(name, optionNames, userSelectionsAndCorrect
     ? binomialPValue(totalCorrect, total, 1 / 3)
     : 1;
 
+  // Build confidence breakdown (only for +C variants)
+  const confidenceBreakdown = hasConfidence
+    ? ['sure', 'somewhat', 'guessing']
+        .filter((level) => confidenceCounts[level].total > 0)
+        .map((level) => ({
+          level,
+          correct: confidenceCounts[level].correct,
+          total: confidenceCounts[level].total,
+        }))
+    : null;
+
   return {
     name,
     optionNames,
@@ -269,6 +312,7 @@ export function computeTriangleStats(name, optionNames, userSelectionsAndCorrect
     totalIncorrect,
     total,
     pValue,
+    confidenceBreakdown,
   };
 }
 

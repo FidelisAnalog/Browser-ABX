@@ -39,6 +39,22 @@ function createMask(seed, len, maxInt) {
 }
 
 /**
+ * Decode 6 confidence breakdown bytes into breakdown array.
+ * @param {number[]} bytes
+ * @param {number} offset - Start index in bytes array
+ * @returns {object[]|null} Confidence breakdown or null if all zeros
+ */
+function decodeConfidenceBreakdown(bytes, offset) {
+  const levels = [
+    { level: 'sure', correct: bytes[offset], total: bytes[offset + 1] },
+    { level: 'somewhat', correct: bytes[offset + 2], total: bytes[offset + 3] },
+    { level: 'guessing', correct: bytes[offset + 4], total: bytes[offset + 5] },
+  ];
+  const rows = levels.filter((r) => r.total > 0);
+  return rows.length > 0 ? rows : null;
+}
+
+/**
  * Create a share URL encoding all test results.
  * @param {object[]} allTestStats - Array of AB/ABX stats
  * @param {object} config - Full config
@@ -70,6 +86,10 @@ export function encodeTestResults(allTestStats, config) {
   const seed = Math.floor(Math.random() * 256);
   bytes.push(seed);
 
+  // Build test type lookup for +C detection
+  const testTypeByName = {};
+  config.tests.forEach((t) => (testTypeByName[t.name] = t.testType.toLowerCase()));
+
   for (const stats of allTestStats) {
     bytes.push(testNameToOrd[stats.name] || 0);
 
@@ -92,6 +112,20 @@ export function encodeTestResults(allTestStats, config) {
         bytes.push(optionNameToOrd[opt.name] || 0);
         bytes.push(opt.count);
       }
+    }
+
+    // +C variants: encode confidence breakdown (6 bytes)
+    const tl = testTypeByName[stats.name] || '';
+    if (tl === 'abx+c' || tl === 'triangle+c') {
+      const bd = stats.confidenceBreakdown || [];
+      const byLevel = {};
+      for (const row of bd) byLevel[row.level] = row;
+      bytes.push(byLevel.sure?.correct ?? 0);
+      bytes.push(byLevel.sure?.total ?? 0);
+      bytes.push(byLevel.somewhat?.correct ?? 0);
+      bytes.push(byLevel.somewhat?.total ?? 0);
+      bytes.push(byLevel.guessing?.correct ?? 0);
+      bytes.push(byLevel.guessing?.total ?? 0);
     }
   }
 
@@ -165,7 +199,7 @@ export function decodeTestResults(dataStr, config) {
       }
 
       const total = totalCorrect + totalIncorrect;
-      stats.push({
+      const entry = {
         name: testName,
         optionNames: testOptionNames,
         matrix,
@@ -173,7 +207,15 @@ export function decodeTestResults(dataStr, config) {
         totalIncorrect,
         total,
         pValue: total > 0 ? binomialPValue(totalCorrect, total, 1 / nOptions) : 1,
-      });
+      };
+
+      // ABX+C: decode confidence breakdown (6 bytes)
+      if (tl === 'abx+c') {
+        entry.confidenceBreakdown = decodeConfidenceBreakdown(bytes, i);
+        i += 6;
+      }
+
+      stats.push(entry);
     } else if (tl === 'triangle' || tl === 'triangle+c') {
       // Triangle: decode correct/incorrect counts
       const test = config.tests[testOrd];
@@ -182,14 +224,22 @@ export function decodeTestResults(dataStr, config) {
       const totalIncorrect = bytes[i++];
       const total = totalCorrect + totalIncorrect;
 
-      stats.push({
+      const entry = {
         name: testName,
         optionNames: testOptionNames,
         totalCorrect,
         totalIncorrect,
         total,
         pValue: total > 0 ? binomialPValue(totalCorrect, total, 1 / 3) : 1,
-      });
+      };
+
+      // Triangle+C: decode confidence breakdown (6 bytes)
+      if (tl === 'triangle+c') {
+        entry.confidenceBreakdown = decodeConfidenceBreakdown(bytes, i);
+        i += 6;
+      }
+
+      stats.push(entry);
     } else {
       // AB: decode option counts
       const test = config.tests[testOrd];
