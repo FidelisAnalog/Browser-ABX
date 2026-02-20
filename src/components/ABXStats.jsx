@@ -19,7 +19,10 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 export default function ABXStats({ stats }) {
   return (
     <Box mb={2}>
-      <Typography variant="h6" gutterBottom>{stats.name}</Typography>
+      <Typography variant="h6" gutterBottom>
+        {stats.name}
+        <Typography component="span" variant="body2" color="text.secondary" ml={1}>ABX</Typography>
+      </Typography>
 
       {/* Confusion matrix */}
       {stats.matrix && stats.optionNames && (

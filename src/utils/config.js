@@ -65,10 +65,10 @@ function normalizeConfig(raw) {
 
   // Normalize tests
   const tests = raw.tests.map((test) => {
-    if (!test.testType) throw new Error(`Test "${test.name}" must have a "testType" (AB, ABX, or ABX+C)`);
-    const validTypes = ['ab', 'abx', 'abx+c'];
+    if (!test.testType) throw new Error(`Test "${test.name}" must have a "testType" (AB, ABX, ABX+C, Triangle, or Triangle+C)`);
+    const validTypes = ['ab', 'abx', 'abx+c', 'triangle', 'triangle+c'];
     if (!validTypes.includes(test.testType.toLowerCase())) {
-      throw new Error(`Test "${test.name}" has unsupported testType "${test.testType}". Valid types: AB, ABX, ABX+C`);
+      throw new Error(`Test "${test.name}" has unsupported testType "${test.testType}". Valid types: AB, ABX, ABX+C, Triangle, Triangle+C`);
     }
     if (!test.options || test.options.length === 0) {
       throw new Error(`Test "${test.name}" must have "options"`);
@@ -89,6 +89,7 @@ function normalizeConfig(raw) {
       repeat: test.repeat || 10,
       crossfade: test.crossfade ?? false,
       crossfadeDuration: test.crossfadeDuration ?? null,
+      showProgress: test.showProgress ?? false,
     };
   });
 

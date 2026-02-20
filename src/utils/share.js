@@ -82,6 +82,10 @@ export function encodeTestResults(allTestStats, config) {
           bytes.push(stats.matrix[correctName]?.[selectedName] ?? 0);
         }
       }
+    } else if (stats.totalCorrect !== undefined && stats.options === undefined) {
+      // Triangle: encode correct/incorrect counts
+      bytes.push(stats.totalCorrect);
+      bytes.push(stats.totalIncorrect);
     } else {
       // AB: encode count per option
       for (const opt of stats.options) {
@@ -134,7 +138,8 @@ export function decodeTestResults(dataStr, config) {
     const testName = testNames[testOrd] || `Test ${testOrd}`;
     const testType = testTypes[testName];
 
-    if (testType && (testType.toLowerCase() === 'abx' || testType.toLowerCase() === 'abx+c')) {
+    const tl = testType ? testType.toLowerCase() : '';
+    if (tl === 'abx' || tl === 'abx+c') {
       // ABX: decode full confusion matrix
       const test = config.tests[testOrd];
       const nOptions = test ? test.options.length : 0;
@@ -168,6 +173,22 @@ export function decodeTestResults(dataStr, config) {
         totalIncorrect,
         total,
         pValue: total > 0 ? binomialPValue(totalCorrect, total, 1 / nOptions) : 1,
+      });
+    } else if (tl === 'triangle' || tl === 'triangle+c') {
+      // Triangle: decode correct/incorrect counts
+      const test = config.tests[testOrd];
+      const testOptionNames = test ? test.options.map((o) => o.name) : [];
+      const totalCorrect = bytes[i++];
+      const totalIncorrect = bytes[i++];
+      const total = totalCorrect + totalIncorrect;
+
+      stats.push({
+        name: testName,
+        optionNames: testOptionNames,
+        totalCorrect,
+        totalIncorrect,
+        total,
+        pValue: total > 0 ? binomialPValue(totalCorrect, total, 1 / 3) : 1,
       });
     } else {
       // AB: decode option counts

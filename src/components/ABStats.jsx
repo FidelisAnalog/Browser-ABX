@@ -17,7 +17,10 @@ import Label from './Label';
 export default function ABStats({ stats }) {
   return (
     <Box mb={2}>
-      <Typography variant="h6" gutterBottom>{stats.name}</Typography>
+      <Typography variant="h6" gutterBottom>
+        {stats.name}
+        <Typography component="span" variant="body2" color="text.secondary" ml={1}>AB</Typography>
+      </Typography>
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">
           <TableHead>

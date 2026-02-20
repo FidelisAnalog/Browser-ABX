@@ -230,6 +230,48 @@ export function computeAbxStats(name, optionNames, userSelectionsAndCorrects) {
   };
 }
 
+// --- Triangle Test Statistics ---
+
+/**
+ * Compute Triangle test statistics from user selections and correct answers.
+ * Same confusion matrix structure as ABX, but chance probability is 1/3
+ * (3 tracks presented, 1 correct answer).
+ *
+ * @param {string} name - Test name
+ * @param {string[]} optionNames - Option names (the 2 original options)
+ * @param {object[]} userSelectionsAndCorrects - Array of { selectedOption, correctOption }
+ * @returns {object} Triangle stats
+ */
+export function computeTriangleStats(name, optionNames, userSelectionsAndCorrects) {
+  let totalCorrect = 0;
+  let totalIncorrect = 0;
+
+  for (const { selectedOption, correctOption } of userSelectionsAndCorrects) {
+    if (selectedOption.name === correctOption.name) {
+      totalCorrect++;
+    } else {
+      totalIncorrect++;
+    }
+  }
+
+  const total = userSelectionsAndCorrects.length;
+
+  // p-value: one-tailed binomial test with chance = 1/3
+  // Triangle always has 3 presented tracks, so random guessing = 1/3
+  const pValue = total > 0
+    ? binomialPValue(totalCorrect, total, 1 / 3)
+    : 1;
+
+  return {
+    name,
+    optionNames,
+    totalCorrect,
+    totalIncorrect,
+    total,
+    pValue,
+  };
+}
+
 // --- Tag-based Aggregation ---
 
 /**

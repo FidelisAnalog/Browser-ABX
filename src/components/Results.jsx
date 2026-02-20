@@ -11,10 +11,11 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import ReactMarkdown from 'react-markdown';
 import ABStats from './ABStats';
 import ABXStats from './ABXStats';
+import TriangleStats from './TriangleStats';
 import ABTagStats from './ABTagStats';
 import ABXTagStats from './ABXTagStats';
 import {
-  computeAbStats, computeAbxStats,
+  computeAbStats, computeAbxStats, computeTriangleStats,
   computeAbTagStats, computeAbxTagStats,
 } from '../stats/statistics';
 import { createShareUrl } from '../utils/share';
@@ -30,36 +31,52 @@ import { createShareUrl } from '../utils/share';
 export default function Results({ description, results, config, precomputedStats, onRestart }) {
   const [copied, setCopied] = useState(false);
 
-  const { abStats, abxStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
+  const { abStats, abxStats, triangleStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
     if (precomputedStats) {
+      // Build a lookup of test name → test type from config
+      const testTypeMap = {};
+      if (config?.tests) {
+        for (const t of config.tests) {
+          testTypeMap[t.name] = t.testType.toLowerCase();
+        }
+      }
+
       const ab = precomputedStats.filter((s) => s.options !== undefined);
-      const abx = precomputedStats.filter((s) => s.totalCorrect !== undefined);
+      const matrixStats = precomputedStats.filter((s) => s.totalCorrect !== undefined);
+      const abx = matrixStats.filter((s) => testTypeMap[s.name] !== 'triangle' && testTypeMap[s.name] !== 'triangle+c');
+      const tri = matrixStats.filter((s) => testTypeMap[s.name] === 'triangle' || testTypeMap[s.name] === 'triangle+c');
       return {
         abStats: ab,
         abxStats: abx,
+        triangleStats: tri,
         abTagStats: computeAbTagStats(ab, config),
-        abxTagStats: computeAbxTagStats(abx, config),
+        abxTagStats: computeAbxTagStats(matrixStats, config),
         shareUrl: null,
       };
     }
 
     const ab = [];
     const abx = [];
+    const tri = [];
 
     for (const result of results) {
-      if (result.testType.toLowerCase() === 'ab') {
+      const t = result.testType.toLowerCase();
+      if (t === 'ab') {
         ab.push(computeAbStats(result.name, result.optionNames, result.userSelections));
-      } else if (result.testType.toLowerCase() === 'abx' || result.testType.toLowerCase() === 'abx+c') {
+      } else if (t === 'abx' || t === 'abx+c') {
         abx.push(computeAbxStats(result.name, result.optionNames, result.userSelectionsAndCorrects));
+      } else if (t === 'triangle' || t === 'triangle+c') {
+        tri.push(computeTriangleStats(result.name, result.optionNames, result.userSelectionsAndCorrects));
       }
     }
 
-    const allStats = [...ab, ...abx];
+    const allStats = [...ab, ...abx, ...tri];
     return {
       abStats: ab,
       abxStats: abx,
+      triangleStats: tri,
       abTagStats: computeAbTagStats(ab, config),
-      abxTagStats: computeAbxTagStats(abx, config),
+      abxTagStats: computeAbxTagStats([...abx, ...tri], config),
       shareUrl: createShareUrl(allStats, config),
     };
   }, [results, config, precomputedStats]);
@@ -93,6 +110,11 @@ export default function Results({ description, results, config, precomputedStats
         {/* ABX test results */}
         {abxStats.map((s, i) => (
           <ABXStats key={`abx-${i}`} stats={s} />
+        ))}
+
+        {/* Triangle test results */}
+        {triangleStats.map((s, i) => (
+          <TriangleStats key={`tri-${i}`} stats={s} />
         ))}
 
         {/* Tag aggregated stats */}

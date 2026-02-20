@@ -1,11 +1,11 @@
 /**
- * ABXTest — identification test screen.
- * X is a random copy of one option. User identifies which option X matches.
- * Uses composition (not inheritance) with shared AudioControls.
+ * TriangleTest — odd-one-out identification test screen.
+ * Three tracks are presented: two identical, one different.
+ * User identifies which track is the odd one out.
  *
- * When showConfidence is true (ABX+C), clicking "X is A" transforms
- * the submit button into a vertical stack of confidence buttons.
- * Clicking a confidence button submits the answer.
+ * When showConfidence is true (Triangle+C), clicking the submit button
+ * transforms into a vertical stack of confidence buttons.
+ * When false (plain Triangle), clicking submits immediately.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -19,23 +19,23 @@ import { useSelectedTrack } from '../audio/useEngineState';
  * @param {string} props.name - Test name
  * @param {string} [props.description] - Test instructions
  * @param {string} props.stepStr - e.g., "3/10"
- * @param {object[]} props.options - Original (non-X) options in fixed order
- * @param {object} props.xOption - The X option (has audioUrl matching one of the options)
+ * @param {object[]} props.triplet - 3 option objects in randomized order (2 identical, 1 different)
+ * @param {object} props.correctOption - The odd-one-out option
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
- * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform (from TestRunner)
+ * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform
  * @param {boolean} props.crossfadeForced
  * @param {number} props.totalIterations - Total number of iterations for this test
- * @param {object[]} props.iterationResults - Array of {selectedOption, correctOption} for completed iterations
- * @param {boolean} [props.showConfidence] - Whether to show confidence selection (ABX+C)
+ * @param {object[]} props.iterationResults - Array of completed iteration results
+ * @param {boolean} [props.showConfidence] - Whether to show confidence selection (Triangle+C)
  * @param {boolean} [props.showProgress] - Whether to show iteration progress bar
  * @param {(selectedOption: object, correctOption: object, confidence: string|null) => void} props.onSubmit
  */
-export default function ABXTest({
+export default function TriangleTest({
   name,
   description,
   stepStr,
-  options,
-  xOption,
+  triplet,
+  correctOption,
   engine,
   channelData,
   crossfadeForced,
@@ -45,23 +45,18 @@ export default function ABXTest({
   showProgress = false,
   onSubmit,
 }) {
-  const trackCount = options.length + 1; // options + X
-  const xTrackIndex = trackCount - 1;    // X is always last
-
+  const trackCount = 3;
   const selectedTrack = useSelectedTrack(engine);
 
-  // The user's answer: which non-X option they think X matches
   const [answer, setAnswer] = useState(null);
-  // Whether the confidence stack is showing (ABX+C only)
   const [pendingSubmit, setPendingSubmit] = useState(false);
 
-  // Reset state when X changes (new iteration)
-  useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [xOption]);
+  // Reset state when triplet changes (new iteration)
+  useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [triplet]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
-    // If they selected a non-X track, that's their answer; selecting X resets
-    setAnswer(index === xTrackIndex ? null : index);
+    setAnswer(index);
     setPendingSubmit(false);
   };
 
@@ -70,25 +65,19 @@ export default function ABXTest({
     return String.fromCharCode(65 + answer);
   };
 
-  // Find the correct option (the one whose audioUrl matches X)
-  const getCorrectOption = () =>
-    options.find((opt) => opt.audioUrl === xOption.audioUrl);
-
   const handleSubmitClick = () => {
     if (answer === null) return;
     if (showConfidence) {
-      // Show confidence stack
       setPendingSubmit(true);
     } else {
-      // Plain ABX — submit immediately
       engine?.stop();
-      onSubmit(options[answer], getCorrectOption(), null);
+      onSubmit(triplet[answer], correctOption, null);
     }
   };
 
   const handleConfidenceClick = (confidence) => {
     engine?.stop();
-    onSubmit(options[answer], getCorrectOption(), confidence);
+    onSubmit(triplet[answer], correctOption, confidence);
   };
 
   const canSubmit = answer !== null;
@@ -117,22 +106,21 @@ export default function ABXTest({
                 <Typography color="text.secondary">{stepStr}</Typography>
               </Box>
 
-              {/* Track selector with X */}
+              {/* Track selector — 3 buttons, no X */}
               <TrackSelector
                 trackCount={trackCount}
                 selectedTrack={selectedTrack}
                 onSelect={handleTrackSelect}
-                xTrackIndex={xTrackIndex}
+                xTrackIndex={null}
               />
 
-              {/* Submit / Confidence area — fixed height, stack grows upward */}
+              {/* Submit / Confidence area */}
               <Box
                 display="flex"
                 justifyContent="flex-end"
                 mt={1}
                 sx={{ position: 'relative', height: 36.5 }}
               >
-                {/* Submit button — conditionally rendered, no animation */}
                 {!pendingSubmit && (
                   <Box sx={{ position: 'absolute', bottom: 0, right: 0 }}>
                     <Button
@@ -142,12 +130,11 @@ export default function ABXTest({
                       disabled={!canSubmit}
                       sx={{ textTransform: 'none' }}
                     >
-                      X is {getAnswerLabel()}
+                      {getAnswerLabel()} is different
                     </Button>
                   </Box>
                 )}
 
-                {/* Confidence stack — animates upward from the button position */}
                 {pendingSubmit && (
                   <Box
                     sx={{
@@ -187,19 +174,15 @@ export default function ABXTest({
                 sx={{ px: 2.5, pb: 1.5 }}
               >
                 {Array.from({ length: totalIterations }, (_, i) => {
-                  let color = '#e0e0e0'; // grey — not yet attempted
+                  let color = '#e0e0e0';
                   if (i < iterationResults.length) {
                     const r = iterationResults[i];
                     const correct = r.selectedOption.audioUrl === r.correctOption.audioUrl;
-                    if (!r.confidence) {
-                      // Plain ABX — single shade
-                      color = correct ? '#2e7d32' : '#c62828';
-                    } else if (r.confidence === 'sure') {
+                    if (r.confidence === 'sure') {
                       color = correct ? '#2e7d32' : '#c62828';
                     } else if (r.confidence === 'somewhat') {
                       color = correct ? '#43a047' : '#e53935';
                     } else {
-                      // guessing
                       color = correct ? '#66bb6a' : '#ef5350';
                     }
                   }

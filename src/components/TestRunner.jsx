@@ -18,6 +18,7 @@ import { shuffle } from '../utils/shuffle';
 import Welcome from './Welcome';
 import ABTest from './ABTest';
 import ABXTest from './ABXTest';
+import TriangleTest from './TriangleTest';
 import Results from './Results';
 import SampleRateInfo from './SampleRateInfo';
 
@@ -25,6 +26,12 @@ import SampleRateInfo from './SampleRateInfo';
 function isAbxType(testType) {
   const t = testType.toLowerCase();
   return t === 'abx' || t === 'abx+c';
+}
+
+/** Test type is Triangle-family (Triangle or Triangle+C). */
+function isTriangleType(testType) {
+  const t = testType.toLowerCase();
+  return t === 'triangle' || t === 'triangle+c';
 }
 
 /**
@@ -51,6 +58,10 @@ export default function TestRunner({ configUrl }) {
   const [currentOptions, setCurrentOptions] = useState([]);
   const shuffledOptionsRef = useRef([]);
   const [xOption, setXOption] = useState(null);
+
+  // Triangle test state
+  const [triangleTriplet, setTriangleTriplet] = useState(null);
+  const [triangleCorrectOption, setTriangleCorrectOption] = useState(null);
 
   // Iteration timing
   const iterationStartRef = useRef(null);
@@ -93,15 +104,18 @@ export default function TestRunner({ configUrl }) {
       .then((cfg) => {
         setConfig(cfg);
         setResults(
-          cfg.tests.map((test) => ({
-            name: test.name,
-            testType: test.testType,
-            optionNames: test.options.map((o) => o.name),
-            nOptions: test.options.length,
-            ...(test.testType.toLowerCase() === 'ab'
-              ? { userSelections: [] }
-              : { userSelectionsAndCorrects: [] }),
-          }))
+          cfg.tests.map((test) => {
+            const t = test.testType.toLowerCase();
+            return {
+              name: test.name,
+              testType: test.testType,
+              optionNames: test.options.map((o) => o.name),
+              nOptions: test.options.length,
+              ...(t === 'ab'
+                ? { userSelections: [] }
+                : { userSelectionsAndCorrects: [] }),
+            };
+          })
         );
       })
       .catch((err) => setConfigError(err.message));
@@ -155,28 +169,40 @@ export default function TestRunner({ configUrl }) {
     if (isAbxType(test.testType) && ch0.length > 0) {
       ch0.push(ch0[0]);
     }
+    // For Triangle, add a duplicate (3 tracks total for waveform display)
+    if (isTriangleType(test.testType) && ch0.length > 0) {
+      ch0.push(ch0[0]);
+    }
     return ch0;
   }, [config, testStep]);
 
   /**
    * Build AudioBuffers for a set of options (+ optional X) and load into engine.
    */
-  const loadIterationAudio = useCallback((options, xOpt) => {
+  const loadIterationAudio = useCallback((options, xOpt, triplet) => {
     if (!engineRef.current) return;
     const ctx = engineRef.current.context;
-
     const cache = decodedCacheRef.current;
-    const buffers = options.map((opt) => {
-      const decoded = cache.get(opt.audioUrl);
-      return createAudioBuffer(ctx, decoded);
-    });
 
-    if (xOpt) {
-      const xDecoded = cache.get(xOpt.audioUrl);
-      buffers.push(createAudioBuffer(ctx, xDecoded));
+    if (triplet) {
+      // Triangle: load 3 triplet buffers
+      const buffers = triplet.map((opt) => {
+        const decoded = cache.get(opt.audioUrl);
+        return createAudioBuffer(ctx, decoded);
+      });
+      engineRef.current.loadBuffers(buffers);
+    } else {
+      // AB/ABX: load options + optional X
+      const buffers = options.map((opt) => {
+        const decoded = cache.get(opt.audioUrl);
+        return createAudioBuffer(ctx, decoded);
+      });
+      if (xOpt) {
+        const xDecoded = cache.get(xOpt.audioUrl);
+        buffers.push(createAudioBuffer(ctx, xDecoded));
+      }
+      engineRef.current.loadBuffers(buffers);
     }
-
-    engineRef.current.loadBuffers(buffers);
   }, []);
 
   // Setup test iteration — shuffle once on first iteration, reuse on repeats
@@ -186,16 +212,34 @@ export default function TestRunner({ configUrl }) {
     setCurrentOptions(ordered);
 
     let xOpt = null;
+    let triplet = null;
+    let correctOdd = null;
+
     if (isAbxType(test.testType)) {
       const randomOption = ordered[Math.floor(Math.random() * ordered.length)];
       xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
       setXOption(xOpt);
+    } else if (isTriangleType(test.testType)) {
+      // Pick one option as odd, duplicate the other
+      const oddIdx = Math.floor(Math.random() * ordered.length);
+      const dupIdx = oddIdx === 0 ? 1 : 0;
+      correctOdd = ordered[oddIdx];
+      // Build triplet: [dup, odd, dup] then shuffle
+      triplet = shuffle([
+        { ...ordered[dupIdx] },
+        { ...correctOdd },
+        { ...ordered[dupIdx] },
+      ]);
+      setTriangleTriplet(triplet);
+      setTriangleCorrectOption(correctOdd);
     } else {
       setXOption(null);
+      setTriangleTriplet(null);
+      setTriangleCorrectOption(null);
     }
 
     iterationStartRef.current = Date.now();
-    return { shuffled: ordered, xOpt };
+    return { shuffled: ordered, xOpt, triplet };
   }, []);
 
   // Start test (from welcome screen)
@@ -204,8 +248,8 @@ export default function TestRunner({ configUrl }) {
     setTestStep(0);
     setRepeatStep(0);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt } = setupIteration(config.tests[0], true);
-      loadIterationAudio(shuffled, xOpt);
+      const { shuffled, xOpt, triplet } = setupIteration(config.tests[0], true);
+      loadIterationAudio(shuffled, xOpt, triplet);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -213,21 +257,24 @@ export default function TestRunner({ configUrl }) {
   const handleRestart = useCallback(() => {
     // Reset results to fresh empty state
     setResults(
-      config.tests.map((test) => ({
-        name: test.name,
-        testType: test.testType,
-        optionNames: test.options.map((o) => o.name),
-        nOptions: test.options.length,
-        ...(test.testType.toLowerCase() === 'ab'
-          ? { userSelections: [] }
-          : { userSelectionsAndCorrects: [] }),
-      }))
+      config.tests.map((test) => {
+        const t = test.testType.toLowerCase();
+        return {
+          name: test.name,
+          testType: test.testType,
+          optionNames: test.options.map((o) => o.name),
+          nOptions: test.options.length,
+          ...(t === 'ab'
+            ? { userSelections: [] }
+            : { userSelectionsAndCorrects: [] }),
+        };
+      })
     );
     setTestStep(0);
     setRepeatStep(0);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt } = setupIteration(config.tests[0], true);
-      loadIterationAudio(shuffled, xOpt);
+      const { shuffled, xOpt, triplet } = setupIteration(config.tests[0], true);
+      loadIterationAudio(shuffled, xOpt, triplet);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -244,7 +291,7 @@ export default function TestRunner({ configUrl }) {
     advanceStep(newResults);
   };
 
-  // Handle ABX test submission
+  // Handle ABX / Triangle test submission
   const handleAbxSubmit = (selectedOption, correctOption, confidence) => {
     const now = Date.now();
     const newResults = JSON.parse(JSON.stringify(results));
@@ -267,15 +314,15 @@ export default function TestRunner({ configUrl }) {
       // Next repeat of same test
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      const { shuffled, xOpt } = setupIteration(test, false);
-      loadIterationAudio(shuffled, xOpt);
+      const { shuffled, xOpt, triplet } = setupIteration(test, false);
+      loadIterationAudio(shuffled, xOpt, triplet);
     } else if (testStep + 1 < config.tests.length) {
       // Next test
       const nextTest = testStep + 1;
       setTestStep(nextTest);
       setRepeatStep(0);
-      const { shuffled, xOpt } = setupIteration(config.tests[nextTest], true);
-      loadIterationAudio(shuffled, xOpt);
+      const { shuffled, xOpt, triplet } = setupIteration(config.tests[nextTest], true);
+      loadIterationAudio(shuffled, xOpt, triplet);
     } else {
       // Done — show results
       setTestStep(config.tests.length);
@@ -374,6 +421,28 @@ export default function TestRunner({ configUrl }) {
         totalIterations={test.repeat}
         iterationResults={results[testStep].userSelectionsAndCorrects}
         showConfidence={test.testType.toLowerCase() === 'abx+c'}
+        showProgress={test.showProgress}
+        onSubmit={handleAbxSubmit}
+      />
+    );
+  }
+
+  if (isTriangleType(test.testType)) {
+    return (
+      <TriangleTest
+        key={testStep}
+        name={test.name}
+        description={test.description}
+        stepStr={stepStr}
+        triplet={triangleTriplet}
+        correctOption={triangleCorrectOption}
+        engine={engine}
+        channelData={testChannelData}
+        crossfadeForced={crossfadeForced}
+        totalIterations={test.repeat}
+        iterationResults={results[testStep].userSelectionsAndCorrects}
+        showConfidence={test.testType.toLowerCase() === 'triangle+c'}
+        showProgress={test.showProgress}
         onSubmit={handleAbxSubmit}
       />
     );
