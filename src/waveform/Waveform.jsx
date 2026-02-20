@@ -118,6 +118,9 @@ const Waveform = React.memo(function Waveform({
       const x = e.clientX - rect.left;
       const fraction = x / rect.width;
       const time = fraction * duration;
+      const [loopStart, loopEnd] = loopRegionRef.current;
+      const isFullRange = loopStart <= 0.001 && loopEnd >= duration - 0.001;
+      if (!isFullRange && (time < loopStart || time > loopEnd)) return;
       onSeek(time);
     },
     [duration, onSeek]
