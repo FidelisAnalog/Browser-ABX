@@ -19,7 +19,7 @@ const BUTTON_SPACING = 24;
  * @param {number} spacing
  * @returns {{ top: string, left: string }}
  */
-function circlePosition(i, n, diameter, spacing) {
+function circlePosition(i, n, diameter, spacing, minRadius = 0) {
   let alpha0;
   switch (n) {
     case 2:
@@ -35,7 +35,7 @@ function circlePosition(i, n, diameter, spacing) {
       alpha0 = Math.PI;
   }
 
-  const r = ((spacing + diameter) / 2) / Math.sin(Math.PI / n);
+  const r = Math.max(minRadius, ((spacing + diameter) / 2) / Math.sin(Math.PI / n));
   const angle = alpha0 - (Math.PI * 2 / n) * i;
   const top = `calc(50% - ${Math.sin(angle) * r}px)`;
   const left = `calc(50% + ${Math.cos(angle) * r}px)`;
@@ -78,7 +78,8 @@ export default function TrackSelector({
     } else {
       // Regular buttons in circle (adjust index for layout if X is present)
       const layoutIndex = xTrackIndex !== null && i > xTrackIndex ? i - 1 : i;
-      position = circlePosition(layoutIndex, layoutCount, BUTTON_DIAMETER, BUTTON_SPACING);
+      const minRadius = xTrackIndex !== null ? BUTTON_DIAMETER + BUTTON_SPACING : 0;
+      position = circlePosition(layoutIndex, layoutCount, BUTTON_DIAMETER, BUTTON_SPACING, minRadius);
     }
 
     let color;
