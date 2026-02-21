@@ -26,7 +26,7 @@ import { createShareUrl } from '../utils/share';
 export default function Results({ description, results, config, precomputedStats, onRestart }) {
   const [copied, setCopied] = useState(false);
 
-  const { abStats, abxStats, triangleStats, sdStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
+  const { abStats, abxStats, abxyStats, triangleStats, sdStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
     if (precomputedStats) {
       // Precomputed stats have _baseType from share.js decoding;
       // fall back to config lookup for older share URLs without it
@@ -40,21 +40,24 @@ export default function Results({ description, results, config, precomputedStats
 
       const ab = precomputedStats.filter((s) => getBase(s) === 'ab');
       const abx = precomputedStats.filter((s) => getBase(s) === 'abx');
+      const abxy = precomputedStats.filter((s) => getBase(s) === 'abxy');
       const tri = precomputedStats.filter((s) => getBase(s) === 'triangle');
       const sd = precomputedStats.filter((s) => getBase(s) === '2afc-sd');
       return {
         abStats: ab,
         abxStats: abx,
+        abxyStats: abxy,
         triangleStats: tri,
         sdStats: sd,
         abTagStats: computeAbTagStats(ab, config),
-        abxTagStats: computeAbxTagStats([...abx, ...tri, ...sd], config),
+        abxTagStats: computeAbxTagStats([...abx, ...abxy, ...tri, ...sd], config),
         shareUrl: null,
       };
     }
 
     const ab = [];
     const abx = [];
+    const abxy = [];
     const tri = [];
     const sd = [];
 
@@ -65,18 +68,20 @@ export default function Results({ description, results, config, precomputedStats
 
       if (baseType === 'ab') ab.push(stats);
       else if (baseType === 'abx') abx.push(stats);
+      else if (baseType === 'abxy') abxy.push(stats);
       else if (baseType === 'triangle') tri.push(stats);
       else if (baseType === '2afc-sd') sd.push(stats);
     }
 
-    const allStats = [...ab, ...abx, ...tri, ...sd];
+    const allStats = [...ab, ...abx, ...abxy, ...tri, ...sd];
     return {
       abStats: ab,
       abxStats: abx,
+      abxyStats: abxy,
       triangleStats: tri,
       sdStats: sd,
       abTagStats: computeAbTagStats(ab, config),
-      abxTagStats: computeAbxTagStats([...abx, ...tri, ...sd], config),
+      abxTagStats: computeAbxTagStats([...abx, ...abxy, ...tri, ...sd], config),
       shareUrl: createShareUrl(allStats, config),
     };
   }, [results, config, precomputedStats]);
@@ -112,6 +117,12 @@ export default function Results({ description, results, config, precomputedStats
         {abxStats.map((s, i) => {
           const StatsComp = TEST_TYPES.abx.statsComponent;
           return <StatsComp key={`abx-${i}`} stats={s} />;
+        })}
+
+        {/* ABXY test results */}
+        {abxyStats.map((s, i) => {
+          const StatsComp = TEST_TYPES.abxy.statsComponent;
+          return <StatsComp key={`abxy-${i}`} stats={s} typeLabel="ABXY" />;
         })}
 
         {/* Triangle test results */}

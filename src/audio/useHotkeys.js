@@ -3,7 +3,8 @@
  *
  * Space: play/pause toggle
  * A, B, C, ...: select corresponding track
- * X: select X track (ABX only)
+ * X: select X track (ABX/ABXY)
+ * Y: select Y track (ABXY)
  * Left Arrow: jump back 2 seconds
  * Enter: submit answer
  */
@@ -11,12 +12,13 @@
 import { useEffect, useRef } from 'react';
 
 const JUMP_BACK_SECONDS = 2;
+const MYSTERY_LABELS = 'XYZ';
 
 /**
  * @param {object} params
  * @param {import('./audioEngine').AudioEngine|null} params.engine
  * @param {number} params.trackCount - Total number of tracks
- * @param {number|null} [params.xTrackIndex] - Index of X track (ABX only), null otherwise
+ * @param {number|number[]|null} [params.xTrackIndex] - Index(es) of mystery tracks, null otherwise
  * @param {(index: number) => void} params.onTrackSelect
  * @param {() => void} params.onSubmit
  */
@@ -28,6 +30,11 @@ export function useHotkeys({ engine, trackCount, xTrackIndex = null, onTrackSele
 
   useEffect(() => {
     if (!engine) return;
+
+    // Normalize to array
+    const mysteryIndices = xTrackIndex === null ? []
+      : Array.isArray(xTrackIndex) ? xTrackIndex
+      : [xTrackIndex];
 
     const handleKeyDown = (e) => {
       const tag = e.target.tagName;
@@ -70,13 +77,16 @@ export function useHotkeys({ engine, trackCount, xTrackIndex = null, onTrackSele
       // Letter keys — track selection
       const upper = key.toUpperCase();
       if (upper.length === 1 && upper >= 'A' && upper <= 'Z') {
-        if (upper === 'X' && xTrackIndex !== null) {
+        // Check mystery keys first (X, Y, Z, ...)
+        const mysteryPos = MYSTERY_LABELS.indexOf(upper);
+        if (mysteryPos >= 0 && mysteryPos < mysteryIndices.length) {
           e.preventDefault();
-          onTrackSelectRef.current(xTrackIndex);
+          onTrackSelectRef.current(mysteryIndices[mysteryPos]);
           return;
         }
+        // Regular letter keys (A, B, C, ...)
         const index = upper.charCodeAt(0) - 65;
-        const maxLetterIndex = xTrackIndex !== null ? trackCount - 1 : trackCount;
+        const maxLetterIndex = trackCount - mysteryIndices.length;
         if (index >= 0 && index < maxLetterIndex) {
           e.preventDefault();
           onTrackSelectRef.current(index);

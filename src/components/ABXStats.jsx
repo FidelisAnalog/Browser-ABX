@@ -16,12 +16,12 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
  * @param {object} props
  * @param {object} props.stats - ABX stats object from computeAbxStats
  */
-export default function ABXStats({ stats }) {
+export default function ABXStats({ stats, typeLabel = 'ABX' }) {
   return (
     <Box mb={2}>
       <Typography variant="h6" gutterBottom>
         {stats.name}
-        <Typography component="span" variant="body2" color="text.secondary" ml={1}>ABX</Typography>
+        <Typography component="span" variant="body2" color="text.secondary" ml={1}>{typeLabel}</Typography>
       </Typography>
 
       {/* Confusion matrix */}

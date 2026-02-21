@@ -44,6 +44,7 @@ export default function TestRunner({ configUrl }) {
   const [currentOptions, setCurrentOptions] = useState([]);
   const shuffledOptionsRef = useRef([]);
   const [xOption, setXOption] = useState(null);
+  const [yOption, setYOption] = useState(null);
 
   // Triangle test state
   const [triangleTriplet, setTriangleTriplet] = useState(null);
@@ -165,7 +166,7 @@ export default function TestRunner({ configUrl }) {
   /**
    * Build AudioBuffers for a set of options (+ optional X) and load into engine.
    */
-  const loadIterationAudio = useCallback((options, xOpt, triplet, sdPair) => {
+  const loadIterationAudio = useCallback((options, xOpt, yOpt, triplet, sdPair) => {
     if (!engineRef.current) return;
     const ctx = engineRef.current.context;
     const cache = decodedCacheRef.current;
@@ -193,6 +194,10 @@ export default function TestRunner({ configUrl }) {
       if (xOpt) {
         const xDecoded = cache.get(xOpt.audioUrl);
         buffers.push(createAudioBuffer(ctx, xDecoded));
+      }
+      if (yOpt) {
+        const yDecoded = cache.get(yOpt.audioUrl);
+        buffers.push(createAudioBuffer(ctx, yDecoded));
       }
       engineRef.current.loadBuffers(buffers);
     }
@@ -243,13 +248,24 @@ export default function TestRunner({ configUrl }) {
     }
 
     let xOpt = null;
+    let yOpt = null;
     let triplet = null;
     let correctOdd = null;
 
-    if (baseType === 'abx') {
-      const randomOption = ordered[Math.floor(Math.random() * ordered.length)];
+    if (baseType === 'abx' || baseType === 'abxy') {
+      const randomIndex = Math.floor(Math.random() * ordered.length);
+      const randomOption = ordered[randomIndex];
       xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
       setXOption(xOpt);
+
+      if (baseType === 'abxy') {
+        const otherIndex = randomIndex === 0 ? 1 : 0;
+        const otherOption = ordered[otherIndex];
+        yOpt = { name: 'Y', audioUrl: otherOption.audioUrl };
+        setYOption(yOpt);
+      } else {
+        setYOption(null);
+      }
     } else if (baseType === 'triangle') {
       // Pick one option as odd, duplicate the other
       const oddIdx = Math.floor(Math.random() * ordered.length);
@@ -282,15 +298,16 @@ export default function TestRunner({ configUrl }) {
       setSameDiffPair(sdPair);
       setSameDiffPairType(pType);
       iterationStartRef.current = Date.now();
-      return { shuffled: ordered, xOpt: null, triplet: null, sdPair };
+      return { shuffled: ordered, xOpt: null, yOpt: null, triplet: null, sdPair };
     } else {
       setXOption(null);
+      setYOption(null);
       setTriangleTriplet(null);
       setTriangleCorrectOption(null);
     }
 
     iterationStartRef.current = Date.now();
-    return { shuffled: ordered, xOpt, triplet, sdPair: null };
+    return { shuffled: ordered, xOpt, yOpt, triplet, sdPair: null };
   }, [generateTrialSequence]);
 
   // Start test (from welcome screen)
@@ -299,8 +316,8 @@ export default function TestRunner({ configUrl }) {
     setTestStep(0);
     setRepeatStep(0);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt, triplet, sdPair } = setupIteration(config.tests[0], 0, true);
-      loadIterationAudio(shuffled, xOpt, triplet, sdPair);
+      const { shuffled, xOpt, yOpt, triplet, sdPair } = setupIteration(config.tests[0], 0, true);
+      loadIterationAudio(shuffled, xOpt, yOpt, triplet, sdPair);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -321,8 +338,8 @@ export default function TestRunner({ configUrl }) {
     });
     setResults(freshResults);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt, triplet, sdPair } = setupIteration(config.tests[0], 0, true);
-      loadIterationAudio(shuffled, xOpt, triplet, sdPair);
+      const { shuffled, xOpt, yOpt, triplet, sdPair } = setupIteration(config.tests[0], 0, true);
+      loadIterationAudio(shuffled, xOpt, yOpt, triplet, sdPair);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -377,15 +394,15 @@ export default function TestRunner({ configUrl }) {
       // Next repeat of same test
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      const { shuffled, xOpt, triplet, sdPair } = setupIteration(test, testStep, false, nextRepeat);
-      loadIterationAudio(shuffled, xOpt, triplet, sdPair);
+      const { shuffled, xOpt, yOpt, triplet, sdPair } = setupIteration(test, testStep, false, nextRepeat);
+      loadIterationAudio(shuffled, xOpt, yOpt, triplet, sdPair);
     } else if (testStep + 1 < config.tests.length) {
       // Next test
       const nextTest = testStep + 1;
       setTestStep(nextTest);
       setRepeatStep(0);
-      const { shuffled, xOpt, triplet, sdPair } = setupIteration(config.tests[nextTest], nextTest, true);
-      loadIterationAudio(shuffled, xOpt, triplet, sdPair);
+      const { shuffled, xOpt, yOpt, triplet, sdPair } = setupIteration(config.tests[nextTest], nextTest, true);
+      loadIterationAudio(shuffled, xOpt, yOpt, triplet, sdPair);
     } else {
       // Done — show results
       setTestStep(config.tests.length);
@@ -479,6 +496,16 @@ export default function TestRunner({ configUrl }) {
     typeProps = {
       options: currentOptions,
       xOption,
+      totalIterations: test.repeat,
+      iterationResults: results[testStep].userSelectionsAndCorrects,
+      showConfidence: hasConfidence,
+      showProgress: test.showProgress,
+    };
+  } else if (baseType === 'abxy') {
+    typeProps = {
+      options: currentOptions,
+      xOption,
+      yOption,
       totalIterations: test.repeat,
       iterationResults: results[testStep].userSelectionsAndCorrects,
       showConfidence: hasConfidence,

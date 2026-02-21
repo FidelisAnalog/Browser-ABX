@@ -9,6 +9,7 @@
 
 import ABTest from '../components/ABTest';
 import ABXTest from '../components/ABXTest';
+import ABXYTest from '../components/ABXYTest';
 import TriangleTest from '../components/TriangleTest';
 import SameDiffTest from '../components/SameDiffTest';
 import ABStats from '../components/ABStats';
@@ -55,6 +56,17 @@ export const TEST_TYPES = {
     supportsConfidence: true,
     reshuffleEveryIteration: false,
     waveformExtraTracks: 1,
+    submitType: 'abx',
+    shareEncoding: 'abx',
+  },
+  abxy: {
+    testComponent: ABXYTest,
+    statsComponent: ABXStats,
+    computeStats: computeAbxStats,
+    resultDataKey: 'userSelectionsAndCorrects',
+    supportsConfidence: true,
+    reshuffleEveryIteration: false,
+    waveformExtraTracks: 2,
     submitType: 'abx',
     shareEncoding: 'abx',
   },
