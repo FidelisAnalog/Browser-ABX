@@ -92,8 +92,10 @@ export default function TestRunner({ configUrl }) {
 
   // Load config
   useEffect(() => {
+    let cancelled = false;
     parseConfig(configUrl)
       .then((cfg) => {
+        if (cancelled) return;
         setConfig(cfg);
         setResults(
           cfg.tests.map((test) => {
@@ -108,7 +110,10 @@ export default function TestRunner({ configUrl }) {
           })
         );
       })
-      .catch((err) => setConfigError(err.message));
+      .catch((err) => {
+        if (!cancelled) setConfigError(err.message);
+      });
+    return () => { cancelled = true; };
   }, [configUrl]);
 
   // Collect all unique audio URLs from config
@@ -124,11 +129,13 @@ export default function TestRunner({ configUrl }) {
   // Load and decode all audio files once
   useEffect(() => {
     if (audioUrls.length === 0) return;
+    let cancelled = false;
 
     loadAndValidate(audioUrls, (loaded, total) => {
-      setLoadProgress({ loaded, total });
+      if (!cancelled) setLoadProgress({ loaded, total });
     })
       .then((data) => {
+        if (cancelled) return;
         // Cache decoded data by URL
         const cache = new Map();
         for (let i = 0; i < audioUrls.length; i++) {
@@ -138,7 +145,10 @@ export default function TestRunner({ configUrl }) {
         setAudioSampleRate(data.sampleRate);
         setAudioInitialized(true);
       })
-      .catch((err) => setConfigError(err.message));
+      .catch((err) => {
+        if (!cancelled) setConfigError(err.message);
+      });
+    return () => { cancelled = true; };
   }, [audioUrls]);
 
   // Stable channel data per test — derived from decoded cache, not AudioBuffers.

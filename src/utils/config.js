@@ -60,6 +60,12 @@ function normalizeConfig(raw) {
       audioUrl: rawLink(opt.audioUrl),
       tag: opt.tag || null,
     };
+    if (optionMap[opt.name]) {
+      throw new Error(
+        `Duplicate option name "${opt.name}". Option names must be unique. ` +
+        '(Hint: if your names contain "#", wrap them in quotes in the YAML.)'
+      );
+    }
     optionMap[opt.name] = normalized;
     return normalized;
   });
