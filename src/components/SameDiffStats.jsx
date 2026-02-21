@@ -107,35 +107,6 @@ export default function SameDiffStats({ stats }) {
         </TableContainer>
       </Box>
 
-      {/* P-value / Correct / Incorrect summary */}
-      <Box mt={1}>
-        <TableContainer component={Paper} variant="outlined">
-          <Table size="small" sx={{ tableLayout: 'fixed' }}>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 'bold', width: '50%' }}>
-                  <Box display="inline" mr={1}>p-value</Box>
-                  <Tooltip title="Probability of getting this many or more correct answers by chance (1/2). Lower values suggest the listener can reliably distinguish the options.">
-                    <Box display="inline">
-                      <Label color="primary">?</Label>
-                    </Box>
-                  </Tooltip>
-                </TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Correct</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Incorrect</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              <TableRow>
-                <TableCell>{stats.pValue.toPrecision(3)}</TableCell>
-                <TableCell>{stats.totalCorrect}</TableCell>
-                <TableCell>{stats.totalIncorrect}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Box>
-
       {/* Response breakdown: hits / misses / FA / CR */}
       <Box mt={1}>
         <TableContainer component={Paper} variant="outlined">
@@ -174,6 +145,35 @@ export default function SameDiffStats({ stats }) {
                 <TableCell>{stats.misses}</TableCell>
                 <TableCell>{stats.falseAlarms}</TableCell>
                 <TableCell>{stats.correctRejections}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Box>
+
+      {/* P-value / Correct / Incorrect summary */}
+      <Box mt={1}>
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small" sx={{ tableLayout: 'fixed' }}>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 'bold', width: '50%' }}>
+                  <Box display="inline" mr={1}>p-value</Box>
+                  <Tooltip title="Probability of getting this many or more correct answers by chance (1/2). Lower values suggest the listener can reliably distinguish the options.">
+                    <Box display="inline">
+                      <Label color="primary">?</Label>
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Correct</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Incorrect</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              <TableRow>
+                <TableCell>{stats.pValue.toPrecision(3)}</TableCell>
+                <TableCell>{stats.totalCorrect}</TableCell>
+                <TableCell>{stats.totalIncorrect}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
