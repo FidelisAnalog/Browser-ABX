@@ -134,7 +134,7 @@ export default function SameDiffTest({
                       variant="outlined"
                       color="primary"
                       onClick={() => handleAnswerClick('same')}
-                      sx={{ textTransform: 'none' }}
+                      sx={{ textTransform: 'none', minWidth: 100 }}
                     >
                       Same
                     </Button>
@@ -142,7 +142,7 @@ export default function SameDiffTest({
                       variant="outlined"
                       color="primary"
                       onClick={() => handleAnswerClick('different')}
-                      sx={{ textTransform: 'none' }}
+                      sx={{ textTransform: 'none', minWidth: 100 }}
                     >
                       Different
                     </Button>
