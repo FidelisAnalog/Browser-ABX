@@ -9,15 +9,10 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ReplayIcon from '@mui/icons-material/Replay';
 import ReactMarkdown from 'react-markdown';
-import ABStats from './ABStats';
-import ABXStats from './ABXStats';
-import TriangleStats from './TriangleStats';
 import ABTagStats from './ABTagStats';
 import ABXTagStats from './ABXTagStats';
-import {
-  computeAbStats, computeAbxStats, computeTriangleStats,
-  computeAbTagStats, computeAbxTagStats,
-} from '../stats/statistics';
+import { computeAbTagStats, computeAbxTagStats } from '../stats/statistics';
+import { getTestType, parseTestType, TEST_TYPES } from '../utils/testTypeRegistry';
 import { createShareUrl } from '../utils/share';
 
 /**
@@ -33,24 +28,25 @@ export default function Results({ description, results, config, precomputedStats
 
   const { abStats, abxStats, triangleStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
     if (precomputedStats) {
-      // Build a lookup of test name → test type from config
+      // Precomputed stats have _baseType from share.js decoding;
+      // fall back to config lookup for older share URLs without it
       const testTypeMap = {};
       if (config?.tests) {
         for (const t of config.tests) {
-          testTypeMap[t.name] = t.testType.toLowerCase();
+          testTypeMap[t.name] = t.testType;
         }
       }
+      const getBase = (s) => s._baseType || parseTestType(testTypeMap[s.name] || '').baseType;
 
-      const ab = precomputedStats.filter((s) => s.options !== undefined);
-      const matrixStats = precomputedStats.filter((s) => s.totalCorrect !== undefined);
-      const abx = matrixStats.filter((s) => testTypeMap[s.name] !== 'triangle' && testTypeMap[s.name] !== 'triangle+c');
-      const tri = matrixStats.filter((s) => testTypeMap[s.name] === 'triangle' || testTypeMap[s.name] === 'triangle+c');
+      const ab = precomputedStats.filter((s) => getBase(s) === 'ab');
+      const abx = precomputedStats.filter((s) => getBase(s) === 'abx');
+      const tri = precomputedStats.filter((s) => getBase(s) === 'triangle');
       return {
         abStats: ab,
         abxStats: abx,
         triangleStats: tri,
         abTagStats: computeAbTagStats(ab, config),
-        abxTagStats: computeAbxTagStats(matrixStats, config),
+        abxTagStats: computeAbxTagStats([...abx, ...tri], config),
         shareUrl: null,
       };
     }
@@ -60,14 +56,13 @@ export default function Results({ description, results, config, precomputedStats
     const tri = [];
 
     for (const result of results) {
-      const t = result.testType.toLowerCase();
-      if (t === 'ab') {
-        ab.push(computeAbStats(result.name, result.optionNames, result.userSelections));
-      } else if (t === 'abx' || t === 'abx+c') {
-        abx.push(computeAbxStats(result.name, result.optionNames, result.userSelectionsAndCorrects));
-      } else if (t === 'triangle' || t === 'triangle+c') {
-        tri.push(computeTriangleStats(result.name, result.optionNames, result.userSelectionsAndCorrects));
-      }
+      const { entry, baseType } = getTestType(result.testType);
+      const resultData = result[entry.resultDataKey];
+      const stats = entry.computeStats(result.name, result.optionNames, resultData);
+
+      if (baseType === 'ab') ab.push(stats);
+      else if (baseType === 'abx') abx.push(stats);
+      else if (baseType === 'triangle') tri.push(stats);
     }
 
     const allStats = [...ab, ...abx, ...tri];
@@ -103,19 +98,22 @@ export default function Results({ description, results, config, precomputedStats
         )}
 
         {/* AB test results */}
-        {abStats.map((s, i) => (
-          <ABStats key={`ab-${i}`} stats={s} />
-        ))}
+        {abStats.map((s, i) => {
+          const StatsComp = TEST_TYPES.ab.statsComponent;
+          return <StatsComp key={`ab-${i}`} stats={s} />;
+        })}
 
         {/* ABX test results */}
-        {abxStats.map((s, i) => (
-          <ABXStats key={`abx-${i}`} stats={s} />
-        ))}
+        {abxStats.map((s, i) => {
+          const StatsComp = TEST_TYPES.abx.statsComponent;
+          return <StatsComp key={`abx-${i}`} stats={s} />;
+        })}
 
         {/* Triangle test results */}
-        {triangleStats.map((s, i) => (
-          <TriangleStats key={`tri-${i}`} stats={s} />
-        ))}
+        {triangleStats.map((s, i) => {
+          const StatsComp = TEST_TYPES.triangle.statsComponent;
+          return <StatsComp key={`tri-${i}`} stats={s} />;
+        })}
 
         {/* Tag aggregated stats */}
         <ABTagStats stats={abTagStats} />

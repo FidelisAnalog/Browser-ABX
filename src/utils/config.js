@@ -4,6 +4,7 @@
  */
 
 import yaml from 'js-yaml';
+import { VALID_TEST_TYPES } from './testTypeRegistry';
 
 /**
  * Convert Dropbox share links to direct download links.
@@ -65,10 +66,9 @@ function normalizeConfig(raw) {
 
   // Normalize tests
   const tests = raw.tests.map((test) => {
-    if (!test.testType) throw new Error(`Test "${test.name}" must have a "testType" (AB, ABX, ABX+C, Triangle, or Triangle+C)`);
-    const validTypes = ['ab', 'abx', 'abx+c', 'triangle', 'triangle+c'];
-    if (!validTypes.includes(test.testType.toLowerCase())) {
-      throw new Error(`Test "${test.name}" has unsupported testType "${test.testType}". Valid types: AB, ABX, ABX+C, Triangle, Triangle+C`);
+    if (!test.testType) throw new Error(`Test "${test.name}" must have a "testType" (${VALID_TEST_TYPES.join(', ')})`);
+    if (!VALID_TEST_TYPES.includes(test.testType.toLowerCase())) {
+      throw new Error(`Test "${test.name}" has unsupported testType "${test.testType}". Valid types: ${VALID_TEST_TYPES.join(', ')}`);
     }
     if (!test.options || test.options.length === 0) {
       throw new Error(`Test "${test.name}" must have "options"`);

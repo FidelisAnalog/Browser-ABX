@@ -15,24 +15,10 @@ import { parseConfig } from '../utils/config';
 import { loadAndValidate, createAudioBuffer } from '../audio/audioLoader';
 import { AudioEngine } from '../audio/audioEngine';
 import { shuffle } from '../utils/shuffle';
+import { getTestType } from '../utils/testTypeRegistry';
 import Welcome from './Welcome';
-import ABTest from './ABTest';
-import ABXTest from './ABXTest';
-import TriangleTest from './TriangleTest';
 import Results from './Results';
 import SampleRateInfo from './SampleRateInfo';
-
-/** Test type is ABX-family (ABX or ABX+C). */
-function isAbxType(testType) {
-  const t = testType.toLowerCase();
-  return t === 'abx' || t === 'abx+c';
-}
-
-/** Test type is Triangle-family (Triangle or Triangle+C). */
-function isTriangleType(testType) {
-  const t = testType.toLowerCase();
-  return t === 'triangle' || t === 'triangle+c';
-}
 
 /**
  * @param {object} props
@@ -105,15 +91,13 @@ export default function TestRunner({ configUrl }) {
         setConfig(cfg);
         setResults(
           cfg.tests.map((test) => {
-            const t = test.testType.toLowerCase();
+            const { entry } = getTestType(test.testType);
             return {
               name: test.name,
               testType: test.testType,
               optionNames: null,
               nOptions: test.options.length,
-              ...(t === 'ab'
-                ? { userSelections: [] }
-                : { userSelectionsAndCorrects: [] }),
+              [entry.resultDataKey]: [],
             };
           })
         );
@@ -165,13 +149,10 @@ export default function TestRunner({ configUrl }) {
       const decoded = cache.get(opt.audioUrl);
       return decoded ? decoded.samples[0] : new Float32Array(0);
     });
-    // For ABX, add the first option again (X is always one of them — same waveform shape)
-    if (isAbxType(test.testType) && ch0.length > 0) {
-      ch0.push(ch0[0]);
-    }
-    // For Triangle, add a duplicate (3 tracks total for waveform display)
-    if (isTriangleType(test.testType) && ch0.length > 0) {
-      ch0.push(ch0[0]);
+    // Add extra waveform tracks (ABX: +1 for X, Triangle: +1 for duplicate)
+    const { entry } = getTestType(test.testType);
+    for (let extra = 0; extra < entry.waveformExtraTracks; extra++) {
+      if (ch0.length > 0) ch0.push(ch0[0]);
     }
     return ch0;
   }, [config, testStep]);
@@ -209,7 +190,8 @@ export default function TestRunner({ configUrl }) {
   // When a new test starts, records the shuffled option order in results so the
   // confusion matrix A/B mapping always matches what the user saw.
   const setupIteration = useCallback((test, testIndex, isNewTest) => {
-    const shouldReshuffle = isNewTest || test.testType.toLowerCase() === 'ab';
+    const { entry, baseType } = getTestType(test.testType);
+    const shouldReshuffle = isNewTest || entry.reshuffleEveryIteration;
     const ordered = shouldReshuffle ? shuffle(test.options) : shuffledOptionsRef.current;
     if (isNewTest) shuffledOptionsRef.current = ordered;
     setCurrentOptions(ordered);
@@ -227,11 +209,11 @@ export default function TestRunner({ configUrl }) {
     let triplet = null;
     let correctOdd = null;
 
-    if (isAbxType(test.testType)) {
+    if (baseType === 'abx') {
       const randomOption = ordered[Math.floor(Math.random() * ordered.length)];
       xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
       setXOption(xOpt);
-    } else if (isTriangleType(test.testType)) {
+    } else if (baseType === 'triangle') {
       // Pick one option as odd, duplicate the other
       const oddIdx = Math.floor(Math.random() * ordered.length);
       const dupIdx = oddIdx === 0 ? 1 : 0;
@@ -271,15 +253,13 @@ export default function TestRunner({ configUrl }) {
     setRepeatStep(0);
     // Reset results and update optionNames to shuffled order for first test
     const freshResults = config.tests.map((test) => {
-      const t = test.testType.toLowerCase();
+      const { entry } = getTestType(test.testType);
       return {
         name: test.name,
         testType: test.testType,
         optionNames: null,
         nOptions: test.options.length,
-        ...(t === 'ab'
-          ? { userSelections: [] }
-          : { userSelectionsAndCorrects: [] }),
+        [entry.resultDataKey]: [],
       };
     });
     setResults(freshResults);
@@ -401,65 +381,45 @@ export default function TestRunner({ configUrl }) {
   const stepStr = `${repeatStep + 1}/${test.repeat}`;
   const crossfadeForced = currentTest?.crossfade || false;
 
-  if (test.testType.toLowerCase() === 'ab') {
-    return (
-      <ABTest
-        key={testStep}
-        name={test.name}
-        description={test.description}
-        stepStr={stepStr}
-        options={currentOptions}
-        engine={engine}
-        channelData={testChannelData}
-        crossfadeForced={crossfadeForced}
-        onSubmit={handleAbSubmit}
-      />
-    );
+  const { entry, hasConfidence, baseType } = getTestType(test.testType);
+  const TestComponent = entry.testComponent;
+  const submitHandler = entry.submitType === 'ab' ? handleAbSubmit : handleAbxSubmit;
+
+  // Common props shared by all test types
+  const commonProps = {
+    key: testStep,
+    name: test.name,
+    description: test.description,
+    stepStr,
+    engine,
+    channelData: testChannelData,
+    crossfadeForced,
+    onSubmit: submitHandler,
+  };
+
+  // Type-specific props
+  let typeProps = {};
+  if (baseType === 'ab') {
+    typeProps = { options: currentOptions };
+  } else if (baseType === 'abx') {
+    typeProps = {
+      options: currentOptions,
+      xOption,
+      totalIterations: test.repeat,
+      iterationResults: results[testStep].userSelectionsAndCorrects,
+      showConfidence: hasConfidence,
+      showProgress: test.showProgress,
+    };
+  } else if (baseType === 'triangle') {
+    typeProps = {
+      triplet: triangleTriplet,
+      correctOption: triangleCorrectOption,
+      totalIterations: test.repeat,
+      iterationResults: results[testStep].userSelectionsAndCorrects,
+      showConfidence: hasConfidence,
+      showProgress: test.showProgress,
+    };
   }
 
-  if (isAbxType(test.testType)) {
-    return (
-      <ABXTest
-        key={testStep}
-        name={test.name}
-        description={test.description}
-        stepStr={stepStr}
-        options={currentOptions}
-        xOption={xOption}
-        engine={engine}
-        channelData={testChannelData}
-        crossfadeForced={crossfadeForced}
-        totalIterations={test.repeat}
-        iterationResults={results[testStep].userSelectionsAndCorrects}
-        showConfidence={test.testType.toLowerCase() === 'abx+c'}
-        showProgress={test.showProgress}
-        onSubmit={handleAbxSubmit}
-      />
-    );
-  }
-
-  if (isTriangleType(test.testType)) {
-    return (
-      <TriangleTest
-        key={testStep}
-        name={test.name}
-        description={test.description}
-        stepStr={stepStr}
-        triplet={triangleTriplet}
-        correctOption={triangleCorrectOption}
-        engine={engine}
-        channelData={testChannelData}
-        crossfadeForced={crossfadeForced}
-        totalIterations={test.repeat}
-        iterationResults={results[testStep].userSelectionsAndCorrects}
-        showConfidence={test.testType.toLowerCase() === 'triangle+c'}
-        showProgress={test.showProgress}
-        onSubmit={handleAbxSubmit}
-      />
-    );
-  }
-
-  return (
-    <Typography color="error">Unsupported test type: {test.testType}</Typography>
-  );
+  return <TestComponent {...commonProps} {...typeProps} />;
 }

@@ -6,6 +6,7 @@
 
 import { bytesToBase64, base64ToBytes } from './base64';
 import { multinomialPMF, binomialPValue } from '../stats/statistics';
+import { getTestType } from './testTypeRegistry';
 
 /**
  * Seeded PRNG (Mulberry32) for reproducible obfuscation.
@@ -86,14 +87,16 @@ export function encodeTestResults(allTestStats, config) {
   const seed = Math.floor(Math.random() * 256);
   bytes.push(seed);
 
-  // Build test type lookup for +C detection
+  // Build test type lookup by name
   const testTypeByName = {};
-  config.tests.forEach((t) => (testTypeByName[t.name] = t.testType.toLowerCase()));
+  config.tests.forEach((t) => (testTypeByName[t.name] = t.testType));
 
   for (const stats of allTestStats) {
     bytes.push(testNameToOrd[stats.name] || 0);
 
-    if (stats.matrix) {
+    const { entry, hasConfidence } = getTestType(testTypeByName[stats.name]);
+
+    if (entry.shareEncoding === 'abx') {
       // ABX: encode full confusion matrix
       for (const correctName of stats.optionNames) {
         bytes.push(optionNameToOrd[correctName] || 0);
@@ -102,11 +105,11 @@ export function encodeTestResults(allTestStats, config) {
           bytes.push(stats.matrix[correctName]?.[selectedName] ?? 0);
         }
       }
-    } else if (stats.totalCorrect !== undefined && stats.options === undefined) {
+    } else if (entry.shareEncoding === 'triangle') {
       // Triangle: encode correct/incorrect counts
       bytes.push(stats.totalCorrect);
       bytes.push(stats.totalIncorrect);
-    } else {
+    } else if (entry.shareEncoding === 'ab') {
       // AB: encode count per option
       for (const opt of stats.options) {
         bytes.push(optionNameToOrd[opt.name] || 0);
@@ -115,8 +118,7 @@ export function encodeTestResults(allTestStats, config) {
     }
 
     // +C variants: encode confidence breakdown (6 bytes)
-    const tl = testTypeByName[stats.name] || '';
-    if (tl === 'abx+c' || tl === 'triangle+c') {
+    if (hasConfidence) {
       const bd = stats.confidenceBreakdown || [];
       const byLevel = {};
       for (const row of bd) byLevel[row.level] = row;
@@ -159,8 +161,8 @@ export function decodeTestResults(dataStr, config) {
 
   // Build reverse maps
   const testNames = config.tests.map((t) => t.name);
-  const testTypes = {};
-  config.tests.forEach((t) => (testTypes[t.name] = t.testType));
+  const testTypeByName = {};
+  config.tests.forEach((t) => (testTypeByName[t.name] = t.testType));
 
   const optionNames = config.options.map((o) => o.name);
 
@@ -170,10 +172,10 @@ export function decodeTestResults(dataStr, config) {
   while (i < bytes.length) {
     const testOrd = bytes[i++];
     const testName = testNames[testOrd] || `Test ${testOrd}`;
-    const testType = testTypes[testName];
+    const testType = testTypeByName[testName];
+    const { entry: typeEntry, hasConfidence, baseType } = getTestType(testType);
 
-    const tl = testType ? testType.toLowerCase() : '';
-    if (tl === 'abx' || tl === 'abx+c') {
+    if (typeEntry.shareEncoding === 'abx') {
       // ABX: decode full confusion matrix
       const test = config.tests[testOrd];
       const nOptions = test ? test.options.length : 0;
@@ -199,8 +201,9 @@ export function decodeTestResults(dataStr, config) {
       }
 
       const total = totalCorrect + totalIncorrect;
-      const entry = {
+      const decoded = {
         name: testName,
+        _baseType: baseType,
         optionNames: testOptionNames,
         matrix,
         totalCorrect,
@@ -209,14 +212,13 @@ export function decodeTestResults(dataStr, config) {
         pValue: total > 0 ? binomialPValue(totalCorrect, total, 1 / nOptions) : 1,
       };
 
-      // ABX+C: decode confidence breakdown (6 bytes)
-      if (tl === 'abx+c') {
-        entry.confidenceBreakdown = decodeConfidenceBreakdown(bytes, i);
+      if (hasConfidence) {
+        decoded.confidenceBreakdown = decodeConfidenceBreakdown(bytes, i);
         i += 6;
       }
 
-      stats.push(entry);
-    } else if (tl === 'triangle' || tl === 'triangle+c') {
+      stats.push(decoded);
+    } else if (typeEntry.shareEncoding === 'triangle') {
       // Triangle: decode correct/incorrect counts
       const test = config.tests[testOrd];
       const testOptionNames = test ? test.options.map((o) => o.name) : [];
@@ -224,8 +226,9 @@ export function decodeTestResults(dataStr, config) {
       const totalIncorrect = bytes[i++];
       const total = totalCorrect + totalIncorrect;
 
-      const entry = {
+      const decoded = {
         name: testName,
+        _baseType: baseType,
         optionNames: testOptionNames,
         totalCorrect,
         totalIncorrect,
@@ -233,14 +236,13 @@ export function decodeTestResults(dataStr, config) {
         pValue: total > 0 ? binomialPValue(totalCorrect, total, 1 / 3) : 1,
       };
 
-      // Triangle+C: decode confidence breakdown (6 bytes)
-      if (tl === 'triangle+c') {
-        entry.confidenceBreakdown = decodeConfidenceBreakdown(bytes, i);
+      if (hasConfidence) {
+        decoded.confidenceBreakdown = decodeConfidenceBreakdown(bytes, i);
         i += 6;
       }
 
-      stats.push(entry);
-    } else {
+      stats.push(decoded);
+    } else if (typeEntry.shareEncoding === 'ab') {
       // AB: decode option counts
       const test = config.tests[testOrd];
       const nOptions = test ? test.options.length : 0;
@@ -263,7 +265,7 @@ export function decodeTestResults(dataStr, config) {
       const countArray = options.map((o) => o.count);
       const pValue = total > 0 ? multinomialPMF(countArray, 1 / options.length) : 1;
 
-      stats.push({ name: testName, options, total, pValue });
+      stats.push({ name: testName, _baseType: baseType, options, total, pValue });
     }
   }
 
