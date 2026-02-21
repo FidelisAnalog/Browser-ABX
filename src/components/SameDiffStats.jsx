@@ -142,10 +142,30 @@ export default function SameDiffStats({ stats }) {
           <Table size="small" sx={{ tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Hits</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Misses</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>False alarms</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Correct rej.</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>
+                  <Box display="inline" mr={1}>Hits</Box>
+                  <Tooltip title="Different pairs correctly identified as different.">
+                    <Box display="inline"><Label color="primary">?</Label></Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>
+                  <Box display="inline" mr={1}>Misses</Box>
+                  <Tooltip title="Different pairs incorrectly called same. Failed to detect a real difference.">
+                    <Box display="inline"><Label color="primary">?</Label></Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>
+                  <Box display="inline" mr={1}>False alarms</Box>
+                  <Tooltip title="Same pairs incorrectly called different. Perceived a difference that wasn't there.">
+                    <Box display="inline"><Label color="primary">?</Label></Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>
+                  <Box display="inline" mr={1}>Correct rej.</Box>
+                  <Tooltip title="Same pairs correctly identified as same.">
+                    <Box display="inline"><Label color="primary">?</Label></Box>
+                  </Tooltip>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
