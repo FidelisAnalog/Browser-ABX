@@ -316,6 +316,125 @@ export function computeTriangleStats(name, optionNames, userSelectionsAndCorrect
   };
 }
 
+// --- Inverse Normal CDF (Probit) ---
+
+/**
+ * Inverse normal CDF (z-score) using rational approximation.
+ * Abramowitz and Stegun formula 26.2.23. Accurate to ~4.5e-4.
+ * @param {number} p - Probability (0 < p < 1)
+ * @returns {number} z-score
+ */
+export function zScore(p) {
+  if (p <= 0 || p >= 1) return NaN;
+  if (p < 0.5) return -zScore(1 - p);
+  const t = Math.sqrt(-2 * Math.log(1 - p));
+  const c0 = 2.515517;
+  const c1 = 0.802853;
+  const c2 = 0.010328;
+  const d1 = 1.432788;
+  const d2 = 0.189269;
+  const d3 = 0.001308;
+  return t - (c0 + c1 * t + c2 * t * t) / (1 + d1 * t + d2 * t * t + d3 * t * t * t);
+}
+
+// --- 2AFC Same-Different Statistics ---
+
+/**
+ * Compute 2AFC Same-Different statistics with signal detection theory.
+ *
+ * Trial types: AA, BB (same pairs) and AB, BA (different pairs).
+ * Responses: "same" or "different".
+ *
+ * Signal detection:
+ * - Hit = correctly identifying a different pair as "different"
+ * - Miss = incorrectly identifying a different pair as "same"
+ * - False alarm = incorrectly identifying a same pair as "different"
+ * - Correct rejection = correctly identifying a same pair as "same"
+ *
+ * d' and criterion c use Hautus (1995) log-linear correction:
+ * add 0.5 to both hit and false-alarm counts, add 1 to totals.
+ *
+ * @param {string} name - Test name
+ * @param {string[]} optionNames - The 2 original option names
+ * @param {object[]} userSelectionsAndCorrects - Array of { userResponse, pairType, confidence }
+ * @returns {object} Same-different stats
+ */
+export function computeSameDiffStats(name, optionNames, userSelectionsAndCorrects) {
+  let hits = 0;
+  let misses = 0;
+  let falseAlarms = 0;
+  let correctRejections = 0;
+
+  // Confidence breakdown accumulators
+  const confidenceCounts = { sure: { correct: 0, total: 0 }, somewhat: { correct: 0, total: 0 }, guessing: { correct: 0, total: 0 } };
+  let hasConfidence = false;
+
+  for (const { userResponse, pairType, confidence } of userSelectionsAndCorrects) {
+    const isCorrect = userResponse === pairType;
+    if (pairType === 'different') {
+      if (userResponse === 'different') hits++;
+      else misses++;
+    } else {
+      if (userResponse === 'different') falseAlarms++;
+      else correctRejections++;
+    }
+    if (confidence) {
+      hasConfidence = true;
+      confidenceCounts[confidence].total++;
+      if (isCorrect) confidenceCounts[confidence].correct++;
+    }
+  }
+
+  const totalDifferent = hits + misses;
+  const totalSame = falseAlarms + correctRejections;
+  const totalCorrect = hits + correctRejections;
+  const totalIncorrect = misses + falseAlarms;
+  const total = userSelectionsAndCorrects.length;
+
+  // Hautus (1995) log-linear correction: add 0.5 to counts, 1 to totals
+  const hitRate = totalDifferent > 0
+    ? (hits + 0.5) / (totalDifferent + 1)
+    : 0.5;
+  const falseAlarmRate = totalSame > 0
+    ? (falseAlarms + 0.5) / (totalSame + 1)
+    : 0.5;
+
+  const dPrime = zScore(hitRate) - zScore(falseAlarmRate);
+  const criterionC = -0.5 * (zScore(hitRate) + zScore(falseAlarmRate));
+
+  // Binomial p-value: chance = 0.5
+  const pValue = total > 0 ? binomialPValue(totalCorrect, total, 0.5) : 1;
+
+  // Confidence breakdown
+  const confidenceBreakdown = hasConfidence
+    ? ['sure', 'somewhat', 'guessing']
+        .filter((level) => confidenceCounts[level].total > 0)
+        .map((level) => ({
+          level,
+          correct: confidenceCounts[level].correct,
+          total: confidenceCounts[level].total,
+        }))
+    : null;
+
+  return {
+    name,
+    optionNames,
+    hits,
+    misses,
+    falseAlarms,
+    correctRejections,
+    hitRate,
+    falseAlarmRate,
+    dPrime,
+    criterionC,
+    totalCorrect,
+    totalIncorrect,
+    total,
+    pValue,
+    confidenceBreakdown,
+  };
+}
+
 // --- Tag-based Aggregation ---
 
 /**

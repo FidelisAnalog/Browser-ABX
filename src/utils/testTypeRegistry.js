@@ -10,11 +10,13 @@
 import ABTest from '../components/ABTest';
 import ABXTest from '../components/ABXTest';
 import TriangleTest from '../components/TriangleTest';
+import SameDiffTest from '../components/SameDiffTest';
 import ABStats from '../components/ABStats';
 import ABXStats from '../components/ABXStats';
 import TriangleStats from '../components/TriangleStats';
+import SameDiffStats from '../components/SameDiffStats';
 import {
-  computeAbStats, computeAbxStats, computeTriangleStats,
+  computeAbStats, computeAbxStats, computeTriangleStats, computeSameDiffStats,
 } from '../stats/statistics';
 
 /**
@@ -66,6 +68,17 @@ export const TEST_TYPES = {
     waveformExtraTracks: 1,
     submitType: 'abx',
     shareEncoding: 'triangle',
+  },
+  '2afc-sd': {
+    testComponent: SameDiffTest,
+    statsComponent: SameDiffStats,
+    computeStats: computeSameDiffStats,
+    resultDataKey: 'userSelectionsAndCorrects',
+    supportsConfidence: true,
+    reshuffleEveryIteration: false,
+    waveformExtraTracks: 0,
+    submitType: 'samediff',
+    shareEncoding: '2afc-sd',
   },
 };
 

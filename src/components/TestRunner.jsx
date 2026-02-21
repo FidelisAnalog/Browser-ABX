@@ -49,6 +49,11 @@ export default function TestRunner({ configUrl }) {
   const [triangleTriplet, setTriangleTriplet] = useState(null);
   const [triangleCorrectOption, setTriangleCorrectOption] = useState(null);
 
+  // Same-different test state
+  const sameDiffTrialSeqRef = useRef([]);
+  const [sameDiffPair, setSameDiffPair] = useState(null);
+  const [sameDiffPairType, setSameDiffPairType] = useState(null);
+
   // Iteration timing
   const iterationStartRef = useRef(null);
 
@@ -160,12 +165,19 @@ export default function TestRunner({ configUrl }) {
   /**
    * Build AudioBuffers for a set of options (+ optional X) and load into engine.
    */
-  const loadIterationAudio = useCallback((options, xOpt, triplet) => {
+  const loadIterationAudio = useCallback((options, xOpt, triplet, sdPair) => {
     if (!engineRef.current) return;
     const ctx = engineRef.current.context;
     const cache = decodedCacheRef.current;
 
-    if (triplet) {
+    if (sdPair) {
+      // Same-different: load 2 pair buffers
+      const buffers = sdPair.map((opt) => {
+        const decoded = cache.get(opt.audioUrl);
+        return createAudioBuffer(ctx, decoded);
+      });
+      engineRef.current.loadBuffers(buffers);
+    } else if (triplet) {
       // Triangle: load 3 triplet buffers
       const buffers = triplet.map((opt) => {
         const decoded = cache.get(opt.audioUrl);
@@ -186,10 +198,35 @@ export default function TestRunner({ configUrl }) {
     }
   }, []);
 
+  /**
+   * Generate a 2AFC-SD trial sequence.
+   * Balanced: blocked randomization per ITU-R — blocks of 4 (AA, AB, BA, BB),
+   * shuffled within each block. Partial last block draws without replacement.
+   * Random: each trial independently picks one of {AA, AB, BA, BB}.
+   */
+  const generateTrialSequence = useCallback((repeat, balanced) => {
+    const types = ['AA', 'AB', 'BA', 'BB'];
+    if (!balanced) {
+      return Array.from({ length: repeat }, () => types[Math.floor(Math.random() * 4)]);
+    }
+    // Blocked randomization
+    const fullBlocks = Math.floor(repeat / 4);
+    const remainder = repeat % 4;
+    const seq = [];
+    for (let b = 0; b < fullBlocks; b++) {
+      seq.push(...shuffle([...types]));
+    }
+    if (remainder > 0) {
+      const partial = shuffle([...types]).slice(0, remainder);
+      seq.push(...partial);
+    }
+    return seq;
+  }, []);
+
   // Setup test iteration — shuffle once on first iteration, reuse on repeats.
   // When a new test starts, records the shuffled option order in results so the
   // confusion matrix A/B mapping always matches what the user saw.
-  const setupIteration = useCallback((test, testIndex, isNewTest) => {
+  const setupIteration = useCallback((test, testIndex, isNewTest, repeatIndex = 0) => {
     const { entry, baseType } = getTestType(test.testType);
     const shouldReshuffle = isNewTest || entry.reshuffleEveryIteration;
     const ordered = shouldReshuffle ? shuffle(test.options) : shuffledOptionsRef.current;
@@ -226,6 +263,26 @@ export default function TestRunner({ configUrl }) {
       ]);
       setTriangleTriplet(triplet);
       setTriangleCorrectOption(correctOdd);
+    } else if (baseType === '2afc-sd') {
+      // Generate trial sequence on first iteration
+      if (isNewTest) {
+        sameDiffTrialSeqRef.current = generateTrialSequence(test.repeat, test.balanced);
+      }
+      // Pop the next trial type
+      const trialType = sameDiffTrialSeqRef.current[repeatIndex];
+      const pType = (trialType === 'AA' || trialType === 'BB') ? 'same' : 'different';
+      // Build pair from the two options (ordered[0]=A, ordered[1]=B)
+      const pairMap = {
+        AA: [ordered[0], ordered[0]],
+        BB: [ordered[1], ordered[1]],
+        AB: [ordered[0], ordered[1]],
+        BA: [ordered[1], ordered[0]],
+      };
+      const sdPair = pairMap[trialType].map((o) => ({ ...o }));
+      setSameDiffPair(sdPair);
+      setSameDiffPairType(pType);
+      iterationStartRef.current = Date.now();
+      return { shuffled: ordered, xOpt: null, triplet: null, sdPair };
     } else {
       setXOption(null);
       setTriangleTriplet(null);
@@ -233,8 +290,8 @@ export default function TestRunner({ configUrl }) {
     }
 
     iterationStartRef.current = Date.now();
-    return { shuffled: ordered, xOpt, triplet };
-  }, []);
+    return { shuffled: ordered, xOpt, triplet, sdPair: null };
+  }, [generateTrialSequence]);
 
   // Start test (from welcome screen)
   const handleStart = useCallback((formData) => {
@@ -242,8 +299,8 @@ export default function TestRunner({ configUrl }) {
     setTestStep(0);
     setRepeatStep(0);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt, triplet } = setupIteration(config.tests[0], 0, true);
-      loadIterationAudio(shuffled, xOpt, triplet);
+      const { shuffled, xOpt, triplet, sdPair } = setupIteration(config.tests[0], 0, true);
+      loadIterationAudio(shuffled, xOpt, triplet, sdPair);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -264,8 +321,8 @@ export default function TestRunner({ configUrl }) {
     });
     setResults(freshResults);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt, triplet } = setupIteration(config.tests[0], 0, true);
-      loadIterationAudio(shuffled, xOpt, triplet);
+      const { shuffled, xOpt, triplet, sdPair } = setupIteration(config.tests[0], 0, true);
+      loadIterationAudio(shuffled, xOpt, triplet, sdPair);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -297,6 +354,21 @@ export default function TestRunner({ configUrl }) {
     advanceStep(newResults);
   };
 
+  // Handle same-different test submission
+  const handleSameDiffSubmit = (userResponse, pairType, confidence) => {
+    const now = Date.now();
+    const newResults = JSON.parse(JSON.stringify(results));
+    newResults[testStep].userSelectionsAndCorrects.push({
+      userResponse,
+      pairType,
+      confidence: confidence || null,
+      startedAt: iterationStartRef.current,
+      finishedAt: now,
+    });
+    setResults(newResults);
+    advanceStep(newResults);
+  };
+
   // Advance to next iteration or test
   const advanceStep = (updatedResults) => {
     const test = config.tests[testStep];
@@ -305,15 +377,15 @@ export default function TestRunner({ configUrl }) {
       // Next repeat of same test
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      const { shuffled, xOpt, triplet } = setupIteration(test, testStep, false);
-      loadIterationAudio(shuffled, xOpt, triplet);
+      const { shuffled, xOpt, triplet, sdPair } = setupIteration(test, testStep, false, nextRepeat);
+      loadIterationAudio(shuffled, xOpt, triplet, sdPair);
     } else if (testStep + 1 < config.tests.length) {
       // Next test
       const nextTest = testStep + 1;
       setTestStep(nextTest);
       setRepeatStep(0);
-      const { shuffled, xOpt, triplet } = setupIteration(config.tests[nextTest], nextTest, true);
-      loadIterationAudio(shuffled, xOpt, triplet);
+      const { shuffled, xOpt, triplet, sdPair } = setupIteration(config.tests[nextTest], nextTest, true);
+      loadIterationAudio(shuffled, xOpt, triplet, sdPair);
     } else {
       // Done — show results
       setTestStep(config.tests.length);
@@ -383,7 +455,9 @@ export default function TestRunner({ configUrl }) {
 
   const { entry, hasConfidence, baseType } = getTestType(test.testType);
   const TestComponent = entry.testComponent;
-  const submitHandler = entry.submitType === 'ab' ? handleAbSubmit : handleAbxSubmit;
+  const submitHandler = entry.submitType === 'samediff' ? handleSameDiffSubmit
+    : entry.submitType === 'ab' ? handleAbSubmit
+    : handleAbxSubmit;
 
   // Common props shared by all test types
   const commonProps = {
@@ -414,6 +488,16 @@ export default function TestRunner({ configUrl }) {
     typeProps = {
       triplet: triangleTriplet,
       correctOption: triangleCorrectOption,
+      totalIterations: test.repeat,
+      iterationResults: results[testStep].userSelectionsAndCorrects,
+      showConfidence: hasConfidence,
+      showProgress: test.showProgress,
+    };
+  } else if (baseType === '2afc-sd') {
+    typeProps = {
+      pair: sameDiffPair,
+      pairType: sameDiffPairType,
+      options: currentOptions,
       totalIterations: test.repeat,
       iterationResults: results[testStep].userSelectionsAndCorrects,
       showConfidence: hasConfidence,

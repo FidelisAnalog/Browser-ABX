@@ -90,6 +90,7 @@ function normalizeConfig(raw) {
       crossfade: test.crossfade ?? false,
       crossfadeDuration: test.crossfadeDuration ?? null,
       showProgress: test.showProgress ?? false,
+      balanced: test.balanced ?? true,
     };
   });
 

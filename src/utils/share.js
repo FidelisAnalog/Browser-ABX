@@ -5,7 +5,7 @@
  */
 
 import { bytesToBase64, base64ToBytes } from './base64';
-import { multinomialPMF, binomialPValue } from '../stats/statistics';
+import { multinomialPMF, binomialPValue, zScore } from '../stats/statistics';
 import { getTestType } from './testTypeRegistry';
 
 /**
@@ -109,6 +109,12 @@ export function encodeTestResults(allTestStats, config) {
       // Triangle: encode correct/incorrect counts
       bytes.push(stats.totalCorrect);
       bytes.push(stats.totalIncorrect);
+    } else if (entry.shareEncoding === '2afc-sd') {
+      // 2AFC-SD: encode signal detection counts
+      bytes.push(stats.hits);
+      bytes.push(stats.misses);
+      bytes.push(stats.falseAlarms);
+      bytes.push(stats.correctRejections);
     } else if (entry.shareEncoding === 'ab') {
       // AB: encode count per option
       for (const opt of stats.options) {
@@ -234,6 +240,51 @@ export function decodeTestResults(dataStr, config) {
         totalIncorrect,
         total,
         pValue: total > 0 ? binomialPValue(totalCorrect, total, 1 / 3) : 1,
+      };
+
+      if (hasConfidence) {
+        decoded.confidenceBreakdown = decodeConfidenceBreakdown(bytes, i);
+        i += 6;
+      }
+
+      stats.push(decoded);
+    } else if (typeEntry.shareEncoding === '2afc-sd') {
+      // 2AFC-SD: decode signal detection counts and recompute stats
+      const test = config.tests[testOrd];
+      const testOptionNames = test ? test.options.map((o) => o.name) : [];
+      const hits = bytes[i++];
+      const misses = bytes[i++];
+      const falseAlarms = bytes[i++];
+      const correctRejections = bytes[i++];
+
+      // Recompute signal detection measures with Hautus log-linear correction
+      const nDiff = hits + misses;
+      const nSame = falseAlarms + correctRejections;
+      const hitRate = (hits + 0.5) / (nDiff + 1);
+      const falseAlarmRate = (falseAlarms + 0.5) / (nSame + 1);
+      const dPrime = zScore(hitRate) - zScore(falseAlarmRate);
+      const criterionC = -0.5 * (zScore(hitRate) + zScore(falseAlarmRate));
+
+      const totalCorrect = hits + correctRejections;
+      const totalIncorrect = misses + falseAlarms;
+      const total = totalCorrect + totalIncorrect;
+
+      const decoded = {
+        name: testName,
+        _baseType: baseType,
+        optionNames: testOptionNames,
+        hits,
+        misses,
+        falseAlarms,
+        correctRejections,
+        hitRate,
+        falseAlarmRate,
+        dPrime,
+        criterionC,
+        totalCorrect,
+        totalIncorrect,
+        total,
+        pValue: total > 0 ? binomialPValue(totalCorrect, total, 0.5) : 1,
       };
 
       if (hasConfidence) {
