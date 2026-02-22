@@ -250,13 +250,16 @@ const Waveform = React.memo(function Waveform({
   const zoomControlsRef = useRef({ applyZoom, applyPan, resetZoom, setViewStart, setViewEnd });
   zoomControlsRef.current = { applyZoom, applyPan, resetZoom, setViewStart, setViewEnd };
 
-  // --- Playhead follow (page-mode: scroll view when playhead exits edges WHILE MOVING) ---
-  // Only triggers when the playhead is actively advancing (playing), not during user pan/zoom.
-  // Tracks previous playhead position — if it hasn't moved, don't reposition the view.
+  // --- Playhead follow (page-scroll mode) ---
+  // View stays still while playhead traverses. When the playhead exits the
+  // right edge, page forward by one view-width. When it exits the left edge
+  // (e.g. loop wrap), snap view to show the playhead. User pan/zoom is fully
+  // respected — follow only triggers on edge exits.
 
   useEffect(() => {
     if (!currentTimeRef) return;
     let rafId = null;
+
     let lastPos = currentTimeRef.current;
 
     const checkFollow = () => {
@@ -266,7 +269,7 @@ const Waveform = React.memo(function Waveform({
       const viewDur = ve - vs;
       const isZoomed = vs > 0.001 || ve < dur - 0.001;
       const pos = currentTimeRef.current;
-      const isMoving = Math.abs(pos - lastPos) > 0.001;
+      const isMoving = Math.abs(pos - lastPos) > 0.0001;
       lastPos = pos;
 
       if (isZoomed && isMoving) {
@@ -278,11 +281,11 @@ const Waveform = React.memo(function Waveform({
           setViewStart(newStart);
           setViewEnd(newEnd);
         } else if (pos < vs) {
-          // Playhead past left edge (e.g. loop wrap) — page back
+          // Playhead past left edge (loop wrap) — snap to show playhead
           let newStart = pos;
           let newEnd = pos + viewDur;
           if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
-          if (newStart < 0) { newStart = 0; newEnd = viewDur; }
+          if (newStart < 0) { newStart = 0; newEnd = Math.min(viewDur, dur); }
           setViewStart(newStart);
           setViewEnd(newEnd);
         }
@@ -303,19 +306,21 @@ const Waveform = React.memo(function Waveform({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
       if (e.target.getAttribute('role') === 'slider') return;
 
-      // +/= — zoom in (centered on view center)
+      // +/= — zoom in (centered on playhead)
       if (e.key === '+' || e.key === '=') {
         e.preventDefault();
-        const w = widthRef.current;
-        applyZoom(-30, w / 2); // negative delta = zoom in
+        const pos = currentTimeRef ? currentTimeRef.current : 0;
+        const centerX = timeToXRef.current(pos);
+        applyZoom(-30, centerX); // negative delta = zoom in
         return;
       }
 
-      // - — zoom out
+      // - — zoom out (centered on playhead)
       if (e.key === '-') {
         e.preventDefault();
-        const w = widthRef.current;
-        applyZoom(30, w / 2); // positive delta = zoom out
+        const pos = currentTimeRef ? currentTimeRef.current : 0;
+        const centerX = timeToXRef.current(pos);
+        applyZoom(30, centerX); // positive delta = zoom out
         return;
       }
 
@@ -584,7 +589,7 @@ const Waveform = React.memo(function Waveform({
         cursor: 'pointer',
         borderRadius: 1,
         border: '1px solid #e0e0e0',
-        overflow: 'visible',
+        overflow: 'hidden',
         // Reserve space so layout doesn't jump when SVG appears
         minHeight: TOTAL_HEIGHT,
         touchAction: 'pan-x pan-y',
