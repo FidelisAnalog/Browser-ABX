@@ -250,14 +250,25 @@ export class AudioEngine {
         this._playStartTime = this._context.currentTime;
         this._playOffset = playingPos;
       } else {
-        // Out of bounds — must recreate source at new position
+        // Out of bounds — fade-swap to new position
+        // Skip if a fade is already in flight (rapid drag — discard until done)
+        if (this._pendingFadeOut) return;
         const oldSource = this._activeSource;
         this._activeSource = null;
-        this._startSource(start);
-        if (oldSource) {
-          oldSource.disconnect();
-          try { oldSource.stop(); } catch { /* */ }
-        }
+        const now = this._context.currentTime;
+        const gain = this._gainNode.gain;
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(gain.value, now);
+        gain.linearRampToValueAtTime(0, now + this._microFadeDuration);
+        this._pendingFadeOut = setTimeout(() => {
+          this._pendingFadeOut = null;
+          if (oldSource) {
+            oldSource.disconnect();
+            try { oldSource.stop(); } catch { /* */ }
+          }
+          this._startSource(this._loopStart);
+          this._fadeIn();
+        }, this._microFadeDuration * 1000 + 1);
       }
     }
 
