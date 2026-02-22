@@ -41,7 +41,7 @@ tests:
 3. Launch the test:
 
 ```
-https://fidelisanalog.github.io/Browser-ABX/?test=https://yoursite.com/config.yml
+https://yourdomain.com/?test=https://yoursite.com/config.yml
 ```
 
 **Requirements:**
@@ -342,7 +342,7 @@ Options sharing the same `tag` value have their results aggregated across tests.
 When a test is completed, results can be shared via URL. The result data is encoded as a compact base64url string (RFC 4648 §5) in the `results` query parameter:
 
 ```
-https://fidelisanalog.github.io/Browser-ABX/?test=<config-url>&results=<encoded>
+https://yourdomain.com/?test=<config-url>&results=<encoded>
 ```
 
 The encoded data contains aggregate statistics only — not per-iteration details. Recipients can view the results by opening the link; Browser ABX loads the config, decodes the results, and displays the statistics. No server is required.
