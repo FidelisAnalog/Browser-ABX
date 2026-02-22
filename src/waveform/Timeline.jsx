@@ -1,6 +1,7 @@
 /**
  * Timeline ruler — time markings along the bottom of the waveform.
  * Rendered as part of the waveform SVG.
+ * Adapts tick intervals to the visible time range (supports zoom).
  */
 
 import React, { useMemo } from 'react';
@@ -26,18 +27,18 @@ function formatTime(seconds, showTenths = false) {
 }
 
 /**
- * Choose an appropriate tick interval based on duration and available width.
- * @param {number} duration - Total duration in seconds
+ * Choose an appropriate tick interval based on visible duration and available width.
+ * @param {number} visibleDuration - Visible time range in seconds
  * @param {number} width - Available width in pixels
  * @returns {number} Interval in seconds
  */
-function chooseInterval(duration, width) {
+function chooseInterval(visibleDuration, width) {
   const minPixelsPerTick = 60;
   const maxTicks = Math.floor(width / minPixelsPerTick);
-  const idealInterval = duration / maxTicks;
+  const idealInterval = visibleDuration / maxTicks;
 
   // Snap to nice intervals
-  const candidates = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+  const candidates = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
   for (const c of candidates) {
     if (c >= idealInterval) return c;
   }
@@ -46,21 +47,29 @@ function chooseInterval(duration, width) {
 
 /**
  * @param {object} props
+ * @param {number} props.viewStart - Start of visible range in seconds
+ * @param {number} props.viewEnd - End of visible range in seconds
  * @param {number} props.duration - Total duration in seconds
  * @param {number} props.width - Width in pixels
  * @param {number} props.y - Y offset (top of timeline area)
  * @param {number} props.height - Height of timeline area
  */
-export default function Timeline({ duration, width, y, height }) {
+export default function Timeline({ viewStart, viewEnd, duration, width, y, height }) {
   const ticks = useMemo(() => {
-    if (duration <= 0 || width <= 0) return [];
+    const visibleDuration = viewEnd - viewStart;
+    if (visibleDuration <= 0 || width <= 0) return [];
 
-    const interval = chooseInterval(duration, width);
+    const interval = chooseInterval(visibleDuration, width);
     const showTenths = interval < 1;
     const result = [];
 
-    for (let t = 0; t <= duration; t += interval) {
-      const x = (t / duration) * width;
+    // Start at the first tick >= viewStart, aligned to interval grid
+    const firstTick = Math.ceil(viewStart / interval) * interval;
+
+    for (let t = firstTick; t <= viewEnd + interval * 0.001; t += interval) {
+      // Convert time to x using zoomed transform
+      const x = ((t - viewStart) / visibleDuration) * width;
+      if (x < -1 || x > width + 1) continue;
       result.push({
         x,
         label: formatTime(t, showTenths),
@@ -69,7 +78,7 @@ export default function Timeline({ duration, width, y, height }) {
     }
 
     return result;
-  }, [duration, width]);
+  }, [viewStart, viewEnd, width]);
 
   return (
     <g>
