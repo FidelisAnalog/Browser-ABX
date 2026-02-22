@@ -5,8 +5,8 @@
  * This is a plain JS class that acts as an external store for React components.
  * Components subscribe to state slices via useSyncExternalStore (see useEngineState.js).
  *
- * Pause uses playbackRate=0 (not context.suspend) so the context clock keeps running
- * and resume is synchronous with no hardware re-acquisition cost.
+ * All transport transitions (play, pause, stop, seek) use 3ms micro-fades on the
+ * gain node to eliminate clicks from waveform discontinuities at start/stop points.
  * Seek while playing overlaps the new source before stopping the old to avoid gaps.
  */
 
@@ -58,6 +58,10 @@ export class AudioEngine {
     this._volume = stored !== null ? parseFloat(stored) : 0.5;
     this._gainNode.gain.value = this._volume;
     this._volumePersistTimer = null;
+
+    // Transport micro-fade (anti-click)
+    this._microFadeDuration = 0.003; // 3ms
+    this._pendingFadeOut = null;
 
     // Crossfade
     this._crossfadeEnabled = false;
@@ -399,13 +403,16 @@ export class AudioEngine {
   // --- Transport controls ---
 
   /**
-   * Play — start or resume playback.
+   * Play — start or resume playback with fade-in to avoid click.
    * Creates a new source from the current position (paused) or loop start (stopped).
    */
   play() {
     if (this._buffers.length === 0) return;
     if (this._selectedTrack < 0) return;
     if (this._transportState === 'playing') return;
+
+    // Cancel any pending fade-out (e.g. rapid pause→play)
+    this._cancelFadeOut();
 
     const position =
       this._transportState === 'paused' ? this._playOffset : this._loopStart;
@@ -416,61 +423,83 @@ export class AudioEngine {
       this.resumeContext().then(() => {
         if (this._transportState === 'playing') {
           this._startSource(position);
+          this._fadeIn();
         }
       });
     } else {
       this._startSource(position);
+      this._fadeIn();
       this._setTransportState('playing');
       this._startAnimation();
     }
   }
 
   /**
-   * Pause — record position and discard the source.
-   * No live source while paused means no pops on seek or stop.
-   * Resume creates a fresh source (sub-millisecond).
+   * Pause — fade out, record position, and discard the source.
+   * Position is captured before the fade so the ~3ms ramp doesn't shift it.
    */
   pause() {
     if (this._transportState !== 'playing') return;
 
+    // Capture position BEFORE fade-out
     this._playOffset = this.currentTime;
     this._currentTimeRef.current = this._playOffset;
     this._stopAnimation();
-
-    // Silence then discard the source — no live node while paused
-    this._silenceAndStopSource();
     this._setTransportState('paused');
+
+    this._fadeOut(() => {
+      this._silenceAndStopSource();
+    });
   }
 
   /**
-   * Stop — destroy source and reset to loop start.
+   * Stop — fade out, destroy source, and reset to loop start.
    */
   stop() {
-    this._silenceAndStopSource();
+    const wasPlaying = this._transportState === 'playing';
     this._stopAnimation();
     this._playOffset = this._loopStart;
     this._currentTimeRef.current = this._loopStart;
     this._setTransportState('stopped');
+
+    if (wasPlaying && this._activeSource) {
+      this._fadeOut(() => {
+        this._silenceAndStopSource();
+      });
+    } else {
+      this._silenceAndStopSource();
+    }
   }
 
   /**
    * Seek to a specific position.
-   * While playing: overlaps new source before stopping old (gapless).
-   * While paused/stopped: creates a paused source ready for instant resume.
+   * While playing: fade out, swap sources, fade in (gapless).
+   * While paused/stopped: just update the offset.
    * @param {number} time
    */
   seek(time) {
     const clampedTime = Math.max(this._loopStart, Math.min(time, this._loopEnd));
 
     if (this._transportState === 'playing') {
-      // Overlap: create new source at new position, then stop old
+      // Fade out, swap sources at silence, fade in — no gain restore between
       const oldSource = this._activeSource;
       this._activeSource = null;
-      this._startSource(clampedTime);
-      if (oldSource) {
-        try { oldSource.stop(); } catch { /* */ }
-        oldSource.disconnect();
-      }
+      this._cancelFadeOut();
+      const now = this._context.currentTime;
+      const gain = this._gainNode.gain;
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(gain.value, now);
+      gain.linearRampToValueAtTime(0, now + this._microFadeDuration);
+      this._pendingFadeOut = setTimeout(() => {
+        this._pendingFadeOut = null;
+        if (oldSource) {
+          try { oldSource.stop(); } catch { /* */ }
+          oldSource.disconnect();
+        }
+        // Gain is at 0 — start new source silent, then ramp up
+        this._startSource(clampedTime);
+        this._fadeIn();
+      }, this._microFadeDuration * 1000 + 1);
       this._currentTimeRef.current = clampedTime;
     } else if (this._transportState === 'paused') {
       // No live source while paused — just update the offset
@@ -489,6 +518,7 @@ export class AudioEngine {
    */
   destroy() {
     this._stopAnimation();
+    this._cancelFadeOut();
     this._silenceAndStopSource();
     clearTimeout(this._volumePersistTimer);
     clearTimeout(this._pendingCrossfadeCleanup);
@@ -497,6 +527,51 @@ export class AudioEngine {
   }
 
   // --- Internal methods ---
+
+  /**
+   * Fade gain to 0 over _microFadeDuration, then call callback.
+   * Uses Web Audio scheduled ramps for sample-accurate timing.
+   * @param {() => void} callback - Called after fade completes
+   */
+  _fadeOut(callback) {
+    this._cancelFadeOut();
+    const now = this._context.currentTime;
+    const gain = this._gainNode.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(0, now + this._microFadeDuration);
+    this._pendingFadeOut = setTimeout(() => {
+      this._pendingFadeOut = null;
+      callback();
+      // Restore gain to volume level (ready for next play/fade-in)
+      gain.cancelScheduledValues(this._context.currentTime);
+      gain.setValueAtTime(this._volume, this._context.currentTime);
+    }, this._microFadeDuration * 1000 + 1);
+  }
+
+  /**
+   * Fade gain from 0 to _volume over _microFadeDuration.
+   */
+  _fadeIn() {
+    const now = this._context.currentTime;
+    const gain = this._gainNode.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(0, now);
+    gain.linearRampToValueAtTime(this._volume, now + this._microFadeDuration);
+  }
+
+  /**
+   * Cancel any pending fade-out and restore gain immediately.
+   */
+  _cancelFadeOut() {
+    if (this._pendingFadeOut) {
+      clearTimeout(this._pendingFadeOut);
+      this._pendingFadeOut = null;
+      const gain = this._gainNode.gain;
+      gain.cancelScheduledValues(this._context.currentTime);
+      gain.setValueAtTime(this._volume, this._context.currentTime);
+    }
+  }
 
   _startSource(fromTime, destinationNode) {
     const buffer = this._buffers[this._selectedTrack];
