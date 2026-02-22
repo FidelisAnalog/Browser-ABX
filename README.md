@@ -56,11 +56,11 @@ https://yourdomain.com/?test=https://yoursite.com/config.yml
 
 Present 2 or more options in shuffled order. The listener picks a preference. There is no correct answer. Options are reshuffled every iteration. Does not support confidence ratings.
 
-### ABX — Identification
+### ABX — Discrimination
 
-A and B are labeled references. X is a hidden copy of either A or B. The listener identifies which reference X matches. Binary forced choice with a 50% chance rate. A confusion matrix shows correct-vs-selected identification patterns. Supports +C confidence ratings.
+A and B are labeled references. X is a hidden copy of either A or B. The listener identifies which reference X matches. Binary forced choice with a 50% chance rate. A confusion matrix shows correct-vs-selected discrimination patterns. Supports +C confidence ratings.
 
-### ABXY — Extended Identification
+### ABXY — Extended Discrimination
 
 Same as ABX, but adds a fourth track Y. X matches one reference, Y matches the other. This gives more comparison opportunities per iteration (X vs Y, X vs A, Y vs B, etc.). Uses the same statistical model as ABX — binary choice, 50% chance rate. Supports +C confidence ratings.
 
@@ -225,7 +225,7 @@ If option names contain `#`, wrap them in quotes. Browser ABX detects duplicate 
 
 **Dropbox:** Share links (`www.dropbox.com/...`) are automatically converted to direct download URLs (`dl.dropboxusercontent.com/...?dl=1`). Just paste the Dropbox share link as your `audioUrl`.
 
-**Other hosts:** Use any direct-download HTTPS URL. The file must be served with CORS headers.
+**Other hosts:** Use any direct-download HTTPS URL. The file must be served with CORS headers. Authenticated URLs are not supported.
 
 ## Audio Pipeline
 
@@ -243,7 +243,6 @@ The Web Audio API provides `decodeAudioData()`, but its behavior varies across b
 - Some browsers apply normalization to decoded audio
 - Format support is inconsistent (Safari does not decode FLAC via `decodeAudioData()`)
 - Bit depth handling varies
-- Error reporting is inconsistent
 
 For blind testing, deterministic decoding is essential. Browser ABX uses:
 

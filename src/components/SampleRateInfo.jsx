@@ -18,7 +18,10 @@ import { Alert, AlertTitle, Typography, Box } from '@mui/material';
 export default function SampleRateInfo({ info }) {
   if (!info) return null;
 
-  const formatRate = (rate) => `${(rate / 1000).toFixed(1)}kHz`;
+  const formatRate = (rate) => {
+    const kHz = rate / 1000;
+    return kHz % 1 === 0 ? `${kHz}kHz` : `${kHz.toFixed(1)}kHz`;
+  };
 
   // Everything matches — no need to show anything
   if (info.rateMatch && info.hardwareMatch) {
