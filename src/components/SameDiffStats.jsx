@@ -21,7 +21,7 @@ function interpretSameDiff(dPrime, c) {
   let sensitivity;
   if (dPrime < 0.5) sensitivity = 'No reliable discrimination detected.';
   else if (dPrime < 1.0) sensitivity = 'Weak discrimination.';
-  else if (dPrime < 2.0) sensitivity = 'Moderate discrimination.';
+  else if (dPrime < 2.0) sensitivity = 'Possible moderate discrimination.';
   else sensitivity = 'Strong discrimination.';
 
   // Bias interpretation (negative c = biased toward "different")
