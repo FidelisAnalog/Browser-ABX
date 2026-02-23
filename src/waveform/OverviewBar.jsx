@@ -14,6 +14,8 @@ import { Box } from '@mui/material';
 import { downsampleRange } from './generateWaveform';
 
 const OVERVIEW_HEIGHT = 30;
+const PLAYHEAD_COLOR = '#d32f2f';
+const PLAYHEAD_WIDTH = 1.5;
 const WAVEFORM_COLOR = '#90a4ae';
 const BG_COLOR = '#eceff1';
 const VIEWPORT_COLOR = 'rgba(25, 118, 210, 0.2)';
@@ -27,6 +29,7 @@ const HANDLE_WIDTH = 6; // px hit area on viewport edges
  * @param {number} props.viewStart - Start of visible range in seconds
  * @param {number} props.viewEnd - End of visible range in seconds
  * @param {(start: number, end: number) => void} props.onViewChange - Callback to update view range
+ * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
  */
 const OverviewBar = React.memo(function OverviewBar({
   averaged,
@@ -34,10 +37,16 @@ const OverviewBar = React.memo(function OverviewBar({
   viewStart,
   viewEnd,
   onViewChange,
+  currentTimeRef,
 }) {
   const containerRef = useRef(null);
+  const playheadRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const draggingRef = useRef(null); // 'pan' | 'left' | 'right' | null
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
+  const containerWidthRef = useRef(containerWidth);
+  containerWidthRef.current = containerWidth;
   const dragStartRef = useRef({ x: 0, viewStart: 0, viewEnd: 0 });
 
   // Measure container width
@@ -51,6 +60,28 @@ const OverviewBar = React.memo(function OverviewBar({
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
+
+  // Self-animating playhead — reads timeRef each frame, updates DOM directly
+  useEffect(() => {
+    if (!currentTimeRef) return;
+    let rafId = null;
+    let lastX = -1;
+    const animate = () => {
+      if (playheadRef.current) {
+        const dur = durationRef.current;
+        const w = containerWidthRef.current;
+        const x = dur > 0 && w > 0 ? (currentTimeRef.current / dur) * w : 0;
+        if (x !== lastX) {
+          playheadRef.current.setAttribute('x1', x);
+          playheadRef.current.setAttribute('x2', x);
+          lastX = x;
+        }
+      }
+      rafId = requestAnimationFrame(animate);
+    };
+    rafId = requestAnimationFrame(animate);
+    return () => { if (rafId) cancelAnimationFrame(rafId); };
+  }, [currentTimeRef]);
 
   // Generate overview waveform data (full file, low resolution)
   const waveformData = useMemo(
@@ -227,6 +258,15 @@ const OverviewBar = React.memo(function OverviewBar({
             <line x1={vpLeft} y1={0} x2={vpLeft} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
             <line x1={vpRight} y1={0} x2={vpRight} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
           </>}
+
+          {/* Playhead */}
+          <line
+            ref={playheadRef}
+            x1={0} y1={0} x2={0} y2={OVERVIEW_HEIGHT}
+            stroke={PLAYHEAD_COLOR}
+            strokeWidth={PLAYHEAD_WIDTH}
+            pointerEvents="none"
+          />
         </svg>
       )}
     </Box>

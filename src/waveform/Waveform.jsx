@@ -579,6 +579,7 @@ const Waveform = React.memo(function Waveform({
       viewStart={viewStart}
       viewEnd={viewEnd}
       onViewChange={handleViewChange}
+      currentTimeRef={currentTimeRef}
     />
     <Box
       ref={containerRef}
