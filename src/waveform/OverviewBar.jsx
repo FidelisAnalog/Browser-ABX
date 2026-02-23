@@ -30,6 +30,8 @@ const HANDLE_WIDTH = 6; // px hit area on viewport edges
  * @param {number} props.viewEnd - End of visible range in seconds
  * @param {(start: number, end: number) => void} props.onViewChange - Callback to update view range
  * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
+ * @param {() => void} props.onGestureStart - Called when a drag gesture begins
+ * @param {() => void} props.onGestureEnd - Called when a drag gesture ends
  */
 const OverviewBar = React.memo(function OverviewBar({
   averaged,
@@ -38,6 +40,8 @@ const OverviewBar = React.memo(function OverviewBar({
   viewEnd,
   onViewChange,
   currentTimeRef,
+  onGestureStart,
+  onGestureEnd,
 }) {
   const containerRef = useRef(null);
   const playheadRef = useRef(null);
@@ -131,6 +135,7 @@ const OverviewBar = React.memo(function OverviewBar({
   const handlePointerDown = (e) => {
     e.preventDefault();
     e.target.setPointerCapture(e.pointerId);
+    if (onGestureStart) onGestureStart();
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
 
@@ -190,6 +195,7 @@ const OverviewBar = React.memo(function OverviewBar({
 
   const handlePointerUp = () => {
     draggingRef.current = null;
+    if (onGestureEnd) onGestureEnd();
   };
 
   // Cursor style based on hover position

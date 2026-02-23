@@ -79,6 +79,10 @@ const Waveform = React.memo(function Waveform({
   const viewEndRef = useRef(viewEnd);
   viewEndRef.current = viewEnd;
 
+  // --- Playhead follow state ---
+  const followActiveRef = useRef(false);
+  const gestureActiveRef = useRef(false);
+
   // Reset zoom when duration changes (new test loaded)
   useEffect(() => {
     setViewStart(0);
@@ -181,6 +185,28 @@ const Waveform = React.memo(function Waveform({
     []
   );
 
+  // --- User-initiated viewport changes ---
+  // All user zoom/pan goes through setUserView. Disengages follow immediately,
+  // then re-engages only if playhead is in the new bounds AND no gesture is active.
+  // The rAF follow loop uses setViewStart/setViewEnd directly to avoid triggering this.
+  const setUserView = useCallback((newStart, newEnd) => {
+    followActiveRef.current = false;
+    setViewStart(newStart);
+    setViewEnd(newEnd);
+    if (!gestureActiveRef.current) {
+      const pos = currentTimeRef ? currentTimeRef.current : 0;
+      followActiveRef.current = (pos >= newStart && pos <= newEnd);
+    }
+  }, [currentTimeRef]);
+
+  // Called at gesture end to evaluate whether to re-engage follow
+  const checkFollowEngage = useCallback(() => {
+    const pos = currentTimeRef ? currentTimeRef.current : 0;
+    const vs = viewStartRef.current;
+    const ve = viewEndRef.current;
+    followActiveRef.current = (pos >= vs && pos <= ve);
+  }, [currentTimeRef]);
+
   // --- Zoom helpers ---
 
   const applyZoom = useCallback((delta, centerX) => {
@@ -214,9 +240,8 @@ const Waveform = React.memo(function Waveform({
       newStart = Math.max(0, dur - newViewDur);
     }
 
-    setViewStart(newStart);
-    setViewEnd(newEnd);
-  }, []);
+    setUserView(newStart, newEnd);
+  }, [setUserView]);
 
   const applyPan = useCallback((deltaFraction) => {
     const dur = durationRef.current;
@@ -237,30 +262,29 @@ const Waveform = React.memo(function Waveform({
       newStart = Math.max(0, dur - viewDur);
     }
 
-    setViewStart(newStart);
-    setViewEnd(newEnd);
-  }, []);
+    setUserView(newStart, newEnd);
+  }, [setUserView]);
 
   const resetZoom = useCallback(() => {
-    setViewStart(0);
-    setViewEnd(durationRef.current);
-  }, []);
+    setUserView(0, durationRef.current);
+  }, [setUserView]);
 
   // Expose zoom controls via ref for external use (overview bar)
   const zoomControlsRef = useRef({ applyZoom, applyPan, resetZoom, setViewStart, setViewEnd });
   zoomControlsRef.current = { applyZoom, applyPan, resetZoom, setViewStart, setViewEnd };
 
-  // --- Playhead follow (page-scroll mode) ---
-  // View stays still while playhead traverses. When the playhead exits the
-  // right edge, page forward by one view-width. When it exits the left edge
-  // (e.g. loop wrap), snap view to show the playhead. User pan/zoom is fully
-  // respected — follow only triggers on edge exits.
+  // --- Playhead follow (iZotope RX-style) ---
+  // Follow is opt-in: engages when user pans/zooms viewport to include the
+  // playhead, or when playback starts with playhead in view. Disengages when
+  // user moves viewport away. Playhead drifting into viewport on its own
+  // does NOT engage follow. When engaged, pages forward on right-edge exit
+  // and snaps on left-edge exit (loop wrap).
 
   useEffect(() => {
     if (!currentTimeRef) return;
     let rafId = null;
-
     let lastPos = currentTimeRef.current;
+    let wasMoving = false;
 
     const checkFollow = () => {
       const vs = viewStartRef.current;
@@ -270,9 +294,17 @@ const Waveform = React.memo(function Waveform({
       const isZoomed = vs > 0.001 || ve < dur - 0.001;
       const pos = currentTimeRef.current;
       const isMoving = Math.abs(pos - lastPos) > 0.0001;
+
+      // Detect playback start — engage follow if playhead is in view
+      if (isMoving && !wasMoving && isZoomed) {
+        if (pos >= vs && pos <= ve) {
+          followActiveRef.current = true;
+        }
+      }
+      wasMoving = isMoving;
       lastPos = pos;
 
-      if (isZoomed && isMoving) {
+      if (followActiveRef.current && isMoving && isZoomed) {
         if (pos > ve) {
           // Playhead past right edge — page forward
           let newStart = ve;
@@ -353,17 +385,29 @@ const Waveform = React.memo(function Waveform({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    let gestureEndTimer = null;
+
+    const startWheelGesture = () => {
+      gestureActiveRef.current = true;
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
+      gestureEndTimer = setTimeout(() => {
+        gestureActiveRef.current = false;
+        checkFollowEngage();
+      }, 150);
+    };
 
     const handleWheel = (e) => {
       if (e.ctrlKey || e.metaKey) {
         // Ctrl+scroll or trackpad pinch → zoom
         e.preventDefault();
+        startWheelGesture();
         const rect = el.getBoundingClientRect();
         const x = e.clientX - rect.left;
         applyZoom(e.deltaY, x);
       } else if (e.shiftKey) {
         // Shift+scroll → horizontal pan (proportional to scroll amount)
         e.preventDefault();
+        startWheelGesture();
         const delta = e.deltaX || e.deltaY;
         // Trackpad fires small deltas (1-10px); scale to fraction of view width
         applyPan(delta / 500);
@@ -386,6 +430,7 @@ const Waveform = React.memo(function Waveform({
     // Safari gesture events for trackpad pinch
     const handleGestureChange = (e) => {
       e.preventDefault();
+      startWheelGesture();
       const rect = el.getBoundingClientRect();
       const x = e.clientX - rect.left;
       // Safari scale: >1 = zoom in, <1 = zoom out
@@ -400,8 +445,9 @@ const Waveform = React.memo(function Waveform({
       el.removeEventListener('wheel', handleWheel);
       el.removeEventListener('gesturechange', handleGestureChange);
       if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
     };
-  }, [applyZoom, applyPan]);
+  }, [applyZoom, applyPan, checkFollowEngage]);
 
   // --- Touch pinch-to-zoom ---
 
@@ -423,6 +469,7 @@ const Waveform = React.memo(function Waveform({
     const handleTouchStart = (e) => {
       if (e.touches.length === 2) {
         pinchActive = true;
+        gestureActiveRef.current = true;
         initialDistance = getDistance(e.touches[0], e.touches[1]);
         initialViewStart = viewStartRef.current;
         initialViewEnd = viewEndRef.current;
@@ -452,12 +499,13 @@ const Waveform = React.memo(function Waveform({
       if (newStart < 0) { newStart = 0; newEnd = Math.min(newViewDur, dur); }
       if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - newViewDur); }
 
-      setViewStart(newStart);
-      setViewEnd(newEnd);
+      setUserView(newStart, newEnd);
     };
 
     const handleTouchEnd = () => {
       pinchActive = false;
+      gestureActiveRef.current = false;
+      checkFollowEngage();
     };
 
     el.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -469,7 +517,7 @@ const Waveform = React.memo(function Waveform({
       el.removeEventListener('touchmove', handleTouchMove);
       el.removeEventListener('touchend', handleTouchEnd);
     };
-  }, []);
+  }, [setUserView, checkFollowEngage]);
 
   // --- Double-click to reset zoom ---
 
@@ -566,9 +614,17 @@ const Waveform = React.memo(function Waveform({
 
   // Overview bar view change handler
   const handleViewChange = useCallback((newStart, newEnd) => {
-    setViewStart(newStart);
-    setViewEnd(newEnd);
+    setUserView(newStart, newEnd);
+  }, [setUserView]);
+
+  // Overview bar gesture callbacks
+  const handleOverviewGestureStart = useCallback(() => {
+    gestureActiveRef.current = true;
   }, []);
+  const handleOverviewGestureEnd = useCallback(() => {
+    gestureActiveRef.current = false;
+    checkFollowEngage();
+  }, [checkFollowEngage]);
 
   return (
     <>
@@ -580,6 +636,8 @@ const Waveform = React.memo(function Waveform({
       viewEnd={viewEnd}
       onViewChange={handleViewChange}
       currentTimeRef={currentTimeRef}
+      onGestureStart={handleOverviewGestureStart}
+      onGestureEnd={handleOverviewGestureEnd}
     />
     <Box
       ref={containerRef}
