@@ -65,8 +65,8 @@ export function useHotkeys({ engine, trackCount, xTrackIndex = null, onTrackSele
         return;
       }
 
-      // Left arrow — jump back
-      if (key === 'ArrowLeft') {
+      // Left arrow — jump back (not with shift, which pans the waveform)
+      if (key === 'ArrowLeft' && !e.shiftKey) {
         e.preventDefault();
         const loopRegion = engine.getLoopRegion();
         const pos = engine.currentTime;
