@@ -9,7 +9,7 @@
  * - Click outside the viewport to recenter on that position
  */
 
-import React, { useMemo, useRef, useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useRef, useCallback, useEffect, useState, useId } from 'react';
 import { Box } from '@mui/material';
 import { downsampleRange } from './generateWaveform';
 
@@ -17,10 +17,12 @@ const OVERVIEW_HEIGHT = 30;
 const PLAYHEAD_COLOR = '#d32f2f';
 const PLAYHEAD_WIDTH = 1.5;
 const WAVEFORM_COLOR = '#90a4ae';
+const WAVEFORM_ACTIVE_COLOR = '#1976d2';
 const BG_COLOR = '#eceff1';
-const VIEWPORT_COLOR = 'rgba(25, 118, 210, 0.2)';
 const VIEWPORT_BORDER = '#1976d2';
 const HANDLE_WIDTH = 6; // px hit area on viewport edges
+const CURSOR_COLOR = '#f57c00';
+const CURSOR_OPACITY = 0.45;
 
 /**
  * @param {object} props
@@ -30,6 +32,7 @@ const HANDLE_WIDTH = 6; // px hit area on viewport edges
  * @param {number} props.viewEnd - End of visible range in seconds
  * @param {(start: number, end: number) => void} props.onViewChange - Callback to update view range
  * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
+ * @param {[number, number]} props.loopRegion - [start, end] loop cursors in seconds
  * @param {() => void} props.onGestureStart - Called when a drag gesture begins
  * @param {() => void} props.onGestureEnd - Called when a drag gesture ends
  */
@@ -40,9 +43,11 @@ const OverviewBar = React.memo(function OverviewBar({
   viewEnd,
   onViewChange,
   currentTimeRef,
+  loopRegion,
   onGestureStart,
   onGestureEnd,
 }) {
+  const clipId = useId();
   const containerRef = useRef(null);
   const playheadRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -164,7 +169,25 @@ const OverviewBar = React.memo(function OverviewBar({
     dragStartRef.current = { x, viewStart, viewEnd };
   };
 
+  const updateCursor = (e) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    let cursor = 'pointer';
+    if (draggingRef.current === 'left' || draggingRef.current === 'right') {
+      cursor = 'col-resize';
+    } else if (draggingRef.current === 'pan') {
+      cursor = 'grabbing';
+    } else if (Math.abs(x - vpLeft) <= HANDLE_WIDTH || Math.abs(x - vpRight) <= HANDLE_WIDTH) {
+      cursor = 'col-resize';
+    } else if (x >= vpLeft && x <= vpRight) {
+      cursor = 'grab';
+    }
+    containerRef.current.style.cursor = cursor;
+  };
+
   const handlePointerMove = (e) => {
+    updateCursor(e);
     if (!draggingRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -181,35 +204,32 @@ const OverviewBar = React.memo(function OverviewBar({
       if (newEnd > duration) { newEnd = duration; newStart = Math.max(0, duration - origDur); }
       onViewChange(newStart, newEnd);
     } else if (draggingRef.current === 'left') {
-      const minView = 0.05;
       let newStart = Math.max(0, origStart + dTime);
-      if (newStart >= origEnd - minView) newStart = origEnd - minView;
-      onViewChange(newStart, origEnd);
+      if (newStart > origEnd) {
+        // Crossed over — swap to dragging right edge, reset drag origin
+        draggingRef.current = 'right';
+        dragStartRef.current = { x, viewStart: origEnd, viewEnd: Math.min(duration, newStart) };
+        onViewChange(origEnd, Math.min(duration, newStart));
+      } else {
+        onViewChange(newStart, origEnd);
+      }
     } else if (draggingRef.current === 'right') {
-      const minView = 0.05;
       let newEnd = Math.min(duration, origEnd + dTime);
-      if (newEnd <= origStart + minView) newEnd = origStart + minView;
-      onViewChange(origStart, newEnd);
+      if (newEnd < origStart) {
+        // Crossed over — swap to dragging left edge, reset drag origin
+        draggingRef.current = 'left';
+        dragStartRef.current = { x, viewStart: Math.max(0, newEnd), viewEnd: origStart };
+        onViewChange(Math.max(0, newEnd), origStart);
+      } else {
+        onViewChange(origStart, newEnd);
+      }
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e) => {
     draggingRef.current = null;
     if (onGestureEnd) onGestureEnd();
-  };
-
-  // Cursor style based on hover position
-  const getCursor = (e) => {
-    if (!containerRef.current) return 'default';
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    if (Math.abs(x - vpLeft) <= HANDLE_WIDTH || Math.abs(x - vpRight) <= HANDLE_WIDTH) {
-      return 'ew-resize';
-    }
-    if (x >= vpLeft && x <= vpRight) {
-      return 'grab';
-    }
-    return 'pointer';
+    updateCursor(e);
   };
 
   return (
@@ -228,7 +248,6 @@ const OverviewBar = React.memo(function OverviewBar({
         overflow: 'hidden',
         minHeight: OVERVIEW_HEIGHT,
         touchAction: 'none',
-        cursor: 'pointer',
       }}
     >
       {containerWidth > 0 && (
@@ -240,29 +259,45 @@ const OverviewBar = React.memo(function OverviewBar({
           {/* Background */}
           <rect x={0} y={0} width={containerWidth} height={OVERVIEW_HEIGHT} fill={BG_COLOR} />
 
-          {/* Waveform */}
+          {/* Waveform — grey base */}
           <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.6} />
 
-          {/* Viewport overlay — only shown when zoomed */}
+          {/* Waveform — active region in blue (clipped to viewport) */}
           {isZoomed && <>
-            {/* Dimmed areas outside viewport */}
-            <rect x={0} y={0} width={vpLeft} height={OVERVIEW_HEIGHT} fill="rgba(0,0,0,0.15)" />
-            <rect x={vpRight} y={0} width={containerWidth - vpRight} height={OVERVIEW_HEIGHT} fill="rgba(0,0,0,0.15)" />
-
-            {/* Viewport rectangle */}
-            <rect
-              x={vpLeft}
-              y={0}
-              width={vpWidth}
-              height={OVERVIEW_HEIGHT}
-              fill={VIEWPORT_COLOR}
-              stroke={VIEWPORT_BORDER}
-              strokeWidth={1}
-            />
+            <defs>
+              <clipPath id={clipId}>
+                <rect x={vpLeft} y={0} width={vpWidth} height={OVERVIEW_HEIGHT} />
+              </clipPath>
+            </defs>
+            <path d={waveformPath} fill={WAVEFORM_ACTIVE_COLOR} opacity={0.7} clipPath={`url(#${clipId})`} />
 
             {/* Edge handles (visual indicators) */}
             <line x1={vpLeft} y1={0} x2={vpLeft} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
             <line x1={vpRight} y1={0} x2={vpRight} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
+          </>}
+
+          {/* Loop cursor markers (display-only) */}
+          {loopRegion && !(loopRegion[0] <= 0.001 && loopRegion[1] >= duration - 0.001) && <>
+            <line
+              x1={(loopRegion[0] / duration) * containerWidth}
+              y1={0}
+              x2={(loopRegion[0] / duration) * containerWidth}
+              y2={OVERVIEW_HEIGHT}
+              stroke={CURSOR_COLOR}
+              strokeWidth={1.5}
+              opacity={CURSOR_OPACITY}
+              pointerEvents="none"
+            />
+            <line
+              x1={(loopRegion[1] / duration) * containerWidth}
+              y1={0}
+              x2={(loopRegion[1] / duration) * containerWidth}
+              y2={OVERVIEW_HEIGHT}
+              stroke={CURSOR_COLOR}
+              strokeWidth={1.5}
+              opacity={CURSOR_OPACITY}
+              pointerEvents="none"
+            />
           </>}
 
           {/* Playhead */}

@@ -62,6 +62,7 @@ const Waveform = React.memo(function Waveform({
   const dragActiveRef = useRef(false);
   const draggingRef = useRef(null); // 'start' | 'end' | null
   const containerRectRef = useRef(null);
+  const panDragRef = useRef({ active: false, startX: 0, startViewStart: 0, startViewEnd: 0, moved: false });
 
   // Refs so pointer handlers always read current values (no stale closures)
   const loopRegionRef = useRef(loopRegion);
@@ -525,21 +526,75 @@ const Waveform = React.memo(function Waveform({
     resetZoom();
   }, [resetZoom]);
 
-  // --- Click-to-seek handler — suppressed when a handle drag just ended ---
+  // --- Waveform pointer handlers: click-to-seek + drag-to-pan ---
 
-  const handleClick = useCallback(
+  const handleWaveformPointerDown = useCallback(
     (e) => {
       if (dragActiveRef.current) return;
       if (!svgRef.current || duration <= 0) return;
+      e.target.setPointerCapture(e.pointerId);
+      const rect = svgRef.current.getBoundingClientRect();
+      panDragRef.current = {
+        active: true,
+        startX: e.clientX - rect.left,
+        startViewStart: viewStartRef.current,
+        startViewEnd: viewEndRef.current,
+        moved: false,
+      };
+    },
+    [duration]
+  );
+
+  const handleWaveformPointerMove = useCallback(
+    (e) => {
+      const pd = panDragRef.current;
+      if (!pd.active) return;
+      if (!svgRef.current) return;
       const rect = svgRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      const time = xToTime(x);
-      const [loopStart, loopEnd] = loopRegionRef.current;
-      const isFullRange = loopStart <= 0.001 && loopEnd >= duration - 0.001;
-      if (!isFullRange && (time < loopStart || time > loopEnd)) return;
-      onSeek(time);
+      const dx = x - pd.startX;
+      if (!pd.moved && Math.abs(dx) > 3) {
+        pd.moved = true;
+        gestureActiveRef.current = true;
+        svgRef.current.style.cursor = 'grabbing';
+      }
+      if (!pd.moved) return;
+      const w = widthRef.current;
+      if (w <= 0) return;
+      const viewDur = pd.startViewEnd - pd.startViewStart;
+      const dTime = -(dx / w) * viewDur;
+      const dur = durationRef.current;
+      let newStart = pd.startViewStart + dTime;
+      let newEnd = pd.startViewEnd + dTime;
+      if (newStart < 0) { newStart = 0; newEnd = Math.min(viewDur, dur); }
+      if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
+      setUserView(newStart, newEnd);
     },
-    [duration, onSeek, xToTime]
+    [setUserView]
+  );
+
+  const handleWaveformPointerUp = useCallback(
+    (e) => {
+      const pd = panDragRef.current;
+      if (!pd.active) return;
+      pd.active = false;
+      if (svgRef.current) svgRef.current.style.cursor = '';
+      if (pd.moved) {
+        gestureActiveRef.current = false;
+        checkFollowEngage();
+      } else {
+        // No movement — treat as click-to-seek
+        if (!svgRef.current || duration <= 0) return;
+        const rect = svgRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const time = xToTime(x);
+        const [loopStart, loopEnd] = loopRegionRef.current;
+        const isFullRange = loopStart <= 0.001 && loopEnd >= duration - 0.001;
+        if (!isFullRange && (time < loopStart || time > loopEnd)) return;
+        onSeek(time);
+      }
+    },
+    [duration, onSeek, xToTime, checkFollowEngage]
   );
 
   // --- Pointer event drag handlers for cursor handles ---
@@ -636,6 +691,7 @@ const Waveform = React.memo(function Waveform({
       viewEnd={viewEnd}
       onViewChange={handleViewChange}
       currentTimeRef={currentTimeRef}
+      loopRegion={loopRegion}
       onGestureStart={handleOverviewGestureStart}
       onGestureEnd={handleOverviewGestureEnd}
     />
@@ -658,7 +714,9 @@ const Waveform = React.memo(function Waveform({
         ref={svgRef}
         width={containerWidth}
         height={TOTAL_HEIGHT}
-        onClick={handleClick}
+        onPointerDown={handleWaveformPointerDown}
+        onPointerMove={handleWaveformPointerMove}
+        onPointerUp={handleWaveformPointerUp}
         onDoubleClick={handleDoubleClick}
         style={{ display: 'block', touchAction: 'none' }}
       >
@@ -725,7 +783,7 @@ const Waveform = React.memo(function Waveform({
               left: startX - HIT_OUTWARD,
               width: HIT_OUTWARD + HIT_INWARD,
               height: '100%',
-              cursor: 'ew-resize',
+              cursor: 'col-resize',
               touchAction: 'none',
               pointerEvents: 'auto',
             }}
@@ -740,7 +798,7 @@ const Waveform = React.memo(function Waveform({
               left: endX - HIT_INWARD,
               width: HIT_OUTWARD + HIT_INWARD,
               height: '100%',
-              cursor: 'ew-resize',
+              cursor: 'col-resize',
               touchAction: 'none',
               pointerEvents: 'auto',
             }}
