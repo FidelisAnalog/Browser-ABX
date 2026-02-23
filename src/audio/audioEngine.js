@@ -495,6 +495,8 @@ export class AudioEngine {
       // Fade out, swap sources at silence, fade in — no gain restore between
       const oldSource = this._activeSource;
       this._activeSource = null;
+      this._playOffset = clampedTime;
+      this._playStartTime = this._context.currentTime;
       this._cancelFadeOut();
       const now = this._context.currentTime;
       const gain = this._gainNode.gain;

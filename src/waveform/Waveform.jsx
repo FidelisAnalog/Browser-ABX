@@ -302,6 +302,7 @@ const Waveform = React.memo(function Waveform({
           followActiveRef.current = true;
         }
       }
+
       wasMoving = isMoving;
       lastPos = pos;
 
@@ -592,6 +593,7 @@ const Waveform = React.memo(function Waveform({
         const isFullRange = loopStart <= 0.001 && loopEnd >= duration - 0.001;
         if (!isFullRange && (time < loopStart || time > loopEnd)) return;
         onSeek(time);
+        followActiveRef.current = true;
       }
     },
     [duration, onSeek, xToTime, checkFollowEngage]
