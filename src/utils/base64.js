@@ -36,11 +36,17 @@ export function base64ToBytes(str) {
   const clean = str.replace(/=+$/, '');
   const bytes = [];
 
+  const indexOf = (ch) => {
+    const idx = CHARS.indexOf(ch);
+    if (idx === -1) throw new Error(`Invalid base64url character: "${ch}"`);
+    return idx;
+  };
+
   for (let i = 0; i < clean.length; i += 4) {
-    const b0 = CHARS.indexOf(clean[i]);
-    const b1 = i + 1 < clean.length ? CHARS.indexOf(clean[i + 1]) : 0;
-    const b2 = i + 2 < clean.length ? CHARS.indexOf(clean[i + 2]) : 0;
-    const b3 = i + 3 < clean.length ? CHARS.indexOf(clean[i + 3]) : 0;
+    const b0 = indexOf(clean[i]);
+    const b1 = i + 1 < clean.length ? indexOf(clean[i + 1]) : 0;
+    const b2 = i + 2 < clean.length ? indexOf(clean[i + 2]) : 0;
+    const b3 = i + 3 < clean.length ? indexOf(clean[i + 3]) : 0;
 
     bytes.push((b0 << 2) | (b1 >> 4));
     if (i + 2 < clean.length) bytes.push(((b1 & 15) << 4) | (b2 >> 2));

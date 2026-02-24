@@ -832,7 +832,7 @@ const Waveform = React.memo(function Waveform({
           whiteSpace: 'nowrap',
           zIndex: 10,
         }}>
-          {navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'} + scroll to zoom
+          {navigator.userAgentData?.platform === 'macOS' || navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'} + scroll to zoom
         </div>
       )}
       </>}

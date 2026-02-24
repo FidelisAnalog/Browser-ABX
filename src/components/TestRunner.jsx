@@ -129,13 +129,13 @@ export default function TestRunner({ configUrl }) {
   // Load and decode all audio files once
   useEffect(() => {
     if (audioUrls.length === 0) return;
-    let cancelled = false;
+    const controller = new AbortController();
 
     loadAndValidate(audioUrls, (loaded, total) => {
-      if (!cancelled) setLoadProgress({ loaded, total });
-    })
+      if (!controller.signal.aborted) setLoadProgress({ loaded, total });
+    }, { signal: controller.signal })
       .then((data) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         // Cache decoded data by URL
         const cache = new Map();
         for (let i = 0; i < audioUrls.length; i++) {
@@ -146,9 +146,10 @@ export default function TestRunner({ configUrl }) {
         setAudioInitialized(true);
       })
       .catch((err) => {
-        if (!cancelled) setConfigError(err.message);
+        if (err.name === 'AbortError') return; // Unmount — ignore
+        if (!controller.signal.aborted) setConfigError(err.message);
       });
-    return () => { cancelled = true; };
+    return () => { controller.abort(); };
   }, [audioUrls]);
 
   // Stable channel data per test — derived from decoded cache, not AudioBuffers.

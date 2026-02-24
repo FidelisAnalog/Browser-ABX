@@ -4,7 +4,7 @@
  */
 
 import yaml from 'js-yaml';
-import { VALID_TEST_TYPES } from './testTypeRegistry';
+import { VALID_TEST_TYPES, parseTestType } from './testTypeRegistry';
 
 /**
  * Convert Dropbox share links to direct download links.
@@ -14,7 +14,7 @@ import { VALID_TEST_TYPES } from './testTypeRegistry';
 function rawLink(urlStr) {
   try {
     const url = new URL(urlStr);
-    if (url.hostname === 'www.dropbox.com') {
+    if (url.hostname === 'www.dropbox.com' || url.hostname === 'dropbox.com') {
       url.hostname = 'dl.dropboxusercontent.com';
       url.searchParams.set('dl', '1');
       return url.toString();
@@ -80,6 +80,14 @@ function normalizeConfig(raw) {
       throw new Error(`Test "${test.name}" must have "options"`);
     }
 
+    // ABXY requires exactly 2 options
+    const { baseType } = parseTestType(test.testType);
+    if (baseType === 'abxy' && test.options.length !== 2) {
+      throw new Error(
+        `ABXY tests require exactly 2 options, but test "${test.name}" has ${test.options.length}`
+      );
+    }
+
     // Resolve option names to option objects
     const testOptions = test.options.map((optName) => {
       const opt = optionMap[optName];
@@ -87,12 +95,19 @@ function normalizeConfig(raw) {
       return { ...opt };
     });
 
+    const repeat = test.repeat || 10;
+    if (repeat > 50) {
+      throw new Error(
+        `Test "${test.name}" has repeat: ${repeat}. Maximum is 50.`
+      );
+    }
+
     return {
       name: test.name,
       testType: test.testType,
       description: test.description || null,
       options: testOptions,
-      repeat: test.repeat || 10,
+      repeat,
       crossfade: test.crossfade ?? false,
       crossfadeDuration: test.crossfadeDuration ?? null,
       showProgress: test.showProgress ?? false,

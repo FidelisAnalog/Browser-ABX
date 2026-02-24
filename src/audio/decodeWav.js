@@ -2,7 +2,7 @@
  * WAV (RIFF) parser — extracts raw PCM samples from WAV files.
  * Bypasses browser's decodeAudioData() for a controlled decode pipeline.
  *
- * Supports: PCM int16, int24, int32, float32
+ * Supports: PCM uint8, int16, int24, int32, float32, float64
  * Returns: { sampleRate, bitDepth, channels, samples: Float32Array[] }
  */
 

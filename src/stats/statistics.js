@@ -162,7 +162,10 @@ export function computeAbStats(name, optionNames, userSelections) {
 
   const total = userSelections.length;
   const countArray = optionNames.map((n) => counts[n]);
-  const pValue = total > 0 ? multinomialPMF(countArray, 1 / optionNames.length) : 1;
+  // Chi-squared goodness-of-fit test against uniform distribution
+  const expected = total / optionNames.length;
+  const chiSq = expected > 0 ? countArray.reduce((sum, obs) => sum + ((obs - expected) ** 2) / expected, 0) : 0;
+  const pValue = total > 0 ? chiSquaredPValue(chiSq, optionNames.length - 1) : 1;
 
   const options = optionNames.map((n) => ({
     name: n,
@@ -485,7 +488,10 @@ export function computeAbTagStats(allTestStats, config) {
   return Object.values(groups).map((group) => {
     const total = Object.values(group.counts).reduce((a, b) => a + b, 0);
     const countArray = group.tagNames.map((t) => group.counts[t]);
-    const pValue = total > 0 ? multinomialPMF(countArray, 1 / group.tagNames.length) : 1;
+    // Chi-squared goodness-of-fit test against uniform distribution
+    const expected = total / group.tagNames.length;
+    const chiSq = expected > 0 ? countArray.reduce((sum, obs) => sum + ((obs - expected) ** 2) / expected, 0) : 0;
+    const pValue = total > 0 ? chiSquaredPValue(chiSq, group.tagNames.length - 1) : 1;
 
     return {
       name: group.name,

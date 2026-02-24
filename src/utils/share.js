@@ -5,7 +5,7 @@
  */
 
 import { bytesToBase64, base64ToBytes } from './base64';
-import { multinomialPMF, binomialPValue, zScore } from '../stats/statistics';
+import { chiSquaredPValue, binomialPValue, zScore } from '../stats/statistics';
 import { getTestType } from './testTypeRegistry';
 
 /**
@@ -314,7 +314,10 @@ export function decodeTestResults(dataStr, config) {
       options.sort((a, b) => b.count - a.count);
 
       const countArray = options.map((o) => o.count);
-      const pValue = total > 0 ? multinomialPMF(countArray, 1 / options.length) : 1;
+      // Chi-squared goodness-of-fit test against uniform distribution
+      const expected = total / options.length;
+      const chiSq = expected > 0 ? countArray.reduce((sum, obs) => sum + ((obs - expected) ** 2) / expected, 0) : 0;
+      const pValue = total > 0 ? chiSquaredPValue(chiSq, options.length - 1) : 1;
 
       stats.push({ name: testName, _baseType: baseType, options, total, pValue });
     }

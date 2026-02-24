@@ -20,14 +20,16 @@ const RETRY_DELAY_MS = 1000;
  * Fetch and decode a single audio file.
  * Retries on network errors (Dropbox CDN can drop connections intermittently).
  * @param {string} url - URL to WAV or FLAC file
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal] - AbortSignal to cancel the fetch
  * @returns {Promise<DecodedAudio>}
  */
-export async function fetchAndDecode(url) {
+export async function fetchAndDecode(url, { signal } = {}) {
   let lastError;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetch(url, { cache: 'no-store', signal });
       if (!response.ok) {
         throw new Error(`Failed to fetch audio: ${url} (${response.status} ${response.statusText})`);
       }
@@ -44,7 +46,8 @@ export async function fetchAndDecode(url) {
       throw new Error(`Unsupported audio format for: ${url}. Only WAV and FLAC are supported.`);
     } catch (err) {
       lastError = err;
-      // Don't retry on format errors — those won't resolve themselves
+      // Don't retry on abort or format errors
+      if (err.name === 'AbortError') throw err;
       if (err.message.startsWith('Unsupported audio format')) {
         throw err;
       }
@@ -63,12 +66,14 @@ export async function fetchAndDecode(url) {
  *
  * @param {string[]} urls - Array of audio file URLs
  * @param {(loaded: number, total: number) => void} [onProgress] - Progress callback
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal] - AbortSignal to cancel all fetches
  * @returns {Promise<{ decoded: DecodedAudio[], sampleRate: number, channels: number, sampleCount: number }>}
  */
-export async function loadAndValidate(urls, onProgress) {
+export async function loadAndValidate(urls, onProgress, { signal } = {}) {
   const decoded = [];
   for (let i = 0; i < urls.length; i++) {
-    decoded.push(await fetchAndDecode(urls[i]));
+    decoded.push(await fetchAndDecode(urls[i], { signal }));
     if (onProgress) onProgress(i + 1, urls.length);
   }
 
