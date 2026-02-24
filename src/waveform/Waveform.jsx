@@ -388,6 +388,7 @@ const Waveform = React.memo(function Waveform({
     const el = containerRef.current;
     if (!el) return;
     let gestureEndTimer = null;
+    let lastGestureScale = 1;
 
     const startWheelGesture = () => {
       gestureActiveRef.current = true;
@@ -430,21 +431,29 @@ const Waveform = React.memo(function Waveform({
     };
 
     // Safari gesture events for trackpad pinch
+    const handleGestureStart = (e) => {
+      e.preventDefault();
+      lastGestureScale = e.scale;
+    };
+
     const handleGestureChange = (e) => {
       e.preventDefault();
       startWheelGesture();
       const rect = el.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      // Safari scale: >1 = zoom in, <1 = zoom out
-      const delta = -(e.scale - 1) * 100;
+      // Use incremental scale change, not cumulative offset from 1
+      const delta = -(e.scale - lastGestureScale) * 100;
+      lastGestureScale = e.scale;
       applyZoom(delta, x);
     };
 
     el.addEventListener('wheel', handleWheel, { passive: false });
+    el.addEventListener('gesturestart', handleGestureStart, { passive: false });
     el.addEventListener('gesturechange', handleGestureChange, { passive: false });
 
     return () => {
       el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('gesturestart', handleGestureStart);
       el.removeEventListener('gesturechange', handleGestureChange);
       if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
       if (gestureEndTimer) clearTimeout(gestureEndTimer);
