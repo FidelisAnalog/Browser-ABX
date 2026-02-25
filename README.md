@@ -1,14 +1,14 @@
-# Browser ABX
+# DBT
 
 Double-blind audio listening tests in your browser.
 
 [Live instance](https://fidelisanalog.github.io/Browser-ABX/) · [License](LICENSE)
 
-Browser ABX is a static site — host it anywhere: GitHub Pages, Vercel, Netlify, or any static file server.
+DBT is a static site — host it anywhere: GitHub Pages, Vercel, Netlify, or any static file server.
 
 ## Features
 
-- **Five test methods** — AB, ABX, ABXY, Triangle, 2AFC Same-Different
+- **Six test methods** — AB, ABX(Y), Triangle, Same/Different, adaptive staircase
 - **Custom lossless audio pipeline** — WAV and FLAC decoded in-app, not by the browser
 - **YAML configuration** — define tests, host audio anywhere, share the URL
 - **Shareable result URLs** — encoded in the link, no server required
@@ -76,6 +76,26 @@ When `balanced: true` (the default), trial types use blocked randomization per I
 
 Analyzed using signal detection theory — see [Statistical Methods](#statistical-methods). Supports +C confidence ratings.
 
+### 2AFC-Staircase — Adaptive Threshold (JND)
+
+An adaptive method for estimating the Just Noticeable Difference (JND). Each trial presents two tracks — the reference and a test stimulus at the current level. The listener identifies which track is the reference. The algorithm adjusts the difficulty level based on responses, converging on the listener's detection threshold.
+
+**Transformed up-down rules** (Levitt, 1971):
+
+| Rule | Consecutive correct to step down | Convergence point |
+|------|----------------------------------|-------------------|
+| 1u1d | 1 | 50% correct |
+| 1u2d | 2 | 70.7% correct |
+| 1u3d | 3 | 79.4% correct |
+
+**Step sizes** use a two-phase approach: an initial coarse step for fast convergence, then a fine step for precision. The transition occurs after a configurable number of reversals (direction changes).
+
+**Termination**: The test ends when the target number of reversals is reached, or at `maxTrials` as a safety limit. The threshold (JND) is computed from the mean of reversal levels after discarding the coarse-phase reversals.
+
+**Interleaving** (optional): Multiple staircase tracks run concurrently, with trials randomly alternating between tracks. This reduces sequential dependencies and listener adaptation effects.
+
+Options are ordered from reference (index 0) through increasingly different levels. The test starts at mid-range by default.
+
 ### Confidence Ratings (+C)
 
 Append `+C` to any supported test type (e.g., `ABX+C`, `Triangle+C`, `2AFC-SD+C`). After selecting an answer, the listener rates their confidence:
@@ -115,7 +135,7 @@ Results break down accuracy by confidence level, helping distinguish lucky guess
 | Key | Required | Default | Description |
 |-----|----------|---------|-------------|
 | `name` | Yes | — | Test name |
-| `testType` | Yes | — | `AB`, `ABX`, `ABX+C`, `ABXY`, `ABXY+C`, `Triangle`, `Triangle+C`, `2AFC-SD`, or `2AFC-SD+C` |
+| `testType` | Yes | — | `AB`, `ABX`, `ABX+C`, `ABXY`, `ABXY+C`, `Triangle`, `Triangle+C`, `2AFC-SD`, `2AFC-SD+C`, or `2AFC-Staircase` |
 | `options` | Yes | — | Array of option names (must match defined options) |
 | `repeat` | No | `10` | Number of iterations |
 | `description` | No | — | Instructions shown during the test |
@@ -123,6 +143,44 @@ Results break down accuracy by confidence level, helping distinguish lucky guess
 | `crossfadeDuration` | No | `5` | Crossfade duration in milliseconds |
 | `showProgress` | No | `false` | Show progress bar with per-iteration results |
 | `balanced` | No | `true` | 2AFC-SD only: use ITU-R blocked randomization |
+| `staircase` | No | — | 2AFC-Staircase only: staircase configuration (see below) |
+
+### Staircase Configuration
+
+The `staircase` key is required for `2AFC-Staircase` tests. All sub-keys have defaults.
+
+| Key | Default | Range | Description |
+|-----|---------|-------|-------------|
+| `rule` | `1u1d` | `1u1d`, `1u2d`, `1u3d` | Up-down rule |
+| `reversals` | `6` | 3–12 | Target number of reversals to end the test |
+| `maxTrials` | `30` | 15–50 | Safety limit if reversals aren't reached |
+| `initialStep` | `2` | 1–(nLevels-1) | Step size during coarse phase (in levels) |
+| `finalStep` | `1` | 1–initialStep | Step size during fine phase |
+| `stepReductionAfter` | `2` | 1–reversals | Switch from initialStep to finalStep after this many reversals |
+| `interleave` | `false` | — | Run multiple interleaved staircase tracks |
+
+Options must include at least 5 entries. The first option is the reference (level 0); remaining options are levels 1 through N, ordered from smallest to largest difference.
+
+```yaml
+tests:
+  - name: JND Test
+    testType: 2AFC-Staircase
+    description: Which track is the reference?
+    options:
+      - Reference
+      - Level 1
+      - Level 2
+      - Level 3
+      - Level 4
+      - Level 5
+    staircase:
+      rule: 1u2d
+      reversals: 8
+      maxTrials: 40
+      initialStep: 2
+      finalStep: 1
+      stepReductionAfter: 3
+```
 
 ### Welcome Form Fields
 
@@ -219,7 +277,7 @@ In YAML, a space followed by `#` starts an inline comment. This means:
 - name: "DBTF #3"  # Correct — quotes preserve the full name
 ```
 
-If option names contain `#`, wrap them in quotes. Browser ABX detects duplicate names caused by this and shows an error with a hint.
+If option names contain `#`, wrap them in quotes. DBT detects duplicate names caused by this and shows an error with a hint.
 
 ### Cloud Storage Links
 
@@ -233,7 +291,7 @@ The audio pipeline is designed around one principle: **both tracks in a comparis
 
 ### Why Lossless Only
 
-Browser ABX accepts only WAV and FLAC. Lossy codecs (MP3, AAC, OGG) introduce encoding artifacts that vary by encoder, bitrate, and codec version. If the goal is to compare two recordings, the decode step must not introduce its own differences.
+DBT accepts only WAV and FLAC. Lossy codecs (MP3, AAC, OGG) introduce encoding artifacts that vary by encoder, bitrate, and codec version. If the goal is to compare two recordings, the decode step must not introduce its own differences.
 
 ### Why Custom Decoders
 
@@ -244,7 +302,7 @@ The Web Audio API provides `decodeAudioData()`, but its behavior varies across b
 - Format support is inconsistent (Safari does not decode FLAC via `decodeAudioData()`)
 - Bit depth handling varies
 
-For blind testing, deterministic decoding is essential. Browser ABX uses:
+For blind testing, deterministic decoding is essential. DBT uses:
 
 - **WAV:** A custom RIFF/WAVE parser supporting 8, 16, 24, and 32-bit PCM, 32 and 64-bit IEEE float, and WAVE_FORMAT_EXTENSIBLE headers
 - **FLAC:** A WebAssembly-based decoder (`@wasm-audio-decoders/flac`) for native-speed lossless decompression
@@ -332,6 +390,17 @@ The inverse normal CDF (z-score) uses the **Abramowitz & Stegun formula 26.2.23*
 | < 0 | Biased toward "different" |
 | > 0 | Biased toward "same" |
 
+### Staircase Threshold Estimation (2AFC-Staircase)
+
+The JND is estimated as the mean of reversal levels from the fine-step phase. Coarse-phase reversals (the first `stepReductionAfter` reversals) are discarded, as they reflect the initial search rather than threshold convergence.
+
+**Standard error**: SE = SD / √N, where N is the number of usable reversals and SD is their standard deviation. SE indicates the precision of the threshold estimate.
+
+**Floor/ceiling detection**:
+
+- **Floor**: The staircase descended to level 1 and stayed there — all differences were suprathreshold. The listener's threshold is below the tested range.
+- **Ceiling**: The staircase ascended to the maximum level — the listener could not reliably detect even the largest difference.
+
 ### Tag Aggregation
 
 Options sharing the same `tag` value have their results aggregated across tests. For AB tests, preference counts are summed. For identification tests, correct and incorrect counts are pooled and a combined p-value is computed.
@@ -344,7 +413,7 @@ When a test is completed, results can be shared via URL. The result data is enco
 https://yourdomain.com/?test=<config-url>&results=<encoded>
 ```
 
-The encoded data contains aggregate statistics only — not per-iteration details. Recipients can view the results by opening the link; Browser ABX loads the config, decodes the results, and displays the statistics. No server is required.
+The encoded data contains aggregate statistics — not per-iteration details — except for staircase tests, which include trial-by-trial data so the convergence plot renders from the share URL. Recipients can view the results by opening the link; DBT loads the config, decodes the results, and displays the statistics. No server is required.
 
 ## Keyboard Shortcuts
 
@@ -395,6 +464,8 @@ dist/           Build output and example configs
 ## Standards and References
 
 - **ITU-R** — Balanced blocked randomization for 2AFC-SD trial sequences
+- **Levitt, H. (1971)** — Transformed up-down methods in psychoacoustics, *JASA* 49(2B), 467-477
+- **Kaernbach, C. (1991)** — Simple adaptive testing with the weighted up-down method, *Perception & Psychophysics* 49, 227-229
 - **Hautus, M.J. (1995)** — Log-linear correction for d' and criterion c computation
 - **Abramowitz & Stegun, formula 26.2.23** — Rational approximation for the inverse normal CDF
 - **Green, D.M. & Swets, J.A. (1966)** — *Signal Detection Theory and Psychophysics*
