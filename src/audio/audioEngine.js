@@ -167,7 +167,11 @@ export class AudioEngine {
    */
   loadBuffers(buffers) {
     this._stopAnimation();
-    this._silenceAndStopSource();
+    // If a fade-out is in flight (from stop/pause), let it finish cleanly.
+    // Only force-kill the source if nothing is fading it out.
+    if (!this._pendingFadeOut) {
+      this._silenceAndStopSource();
+    }
     this._buffers = buffers;
 
     const dur = this.getDuration();
