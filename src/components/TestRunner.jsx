@@ -57,6 +57,18 @@ export default function TestRunner({ configUrl }) {
   // Per-test persistent state (e.g. 2AFC-SD trial sequence, staircase state)
   const testStateRef = useRef({});
 
+  // Dynamic page title
+  useEffect(() => {
+    if (!config) return;
+    if (testStep === -1) {
+      document.title = `${config.name} — DBT`;
+    } else if (testStep >= config.tests.length) {
+      document.title = `Results — ${config.name} — DBT`;
+    } else {
+      document.title = `${config.tests[testStep].name} — DBT`;
+    }
+  }, [config, testStep]);
+
   // Adaptive test state — persists across trials within a test.
   // For staircase: holds the staircase state or interleaved state object.
   const adaptiveStateRef = useRef(null);

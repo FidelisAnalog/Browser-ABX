@@ -88,6 +88,22 @@ If there are no usable reversals (stall case), omit SE:
 - SE and reversal count are always shown. They are standard metadata for evaluating
   any staircase result.
 
+## Threshold Convergence Point vs "Reliable Detection"
+
+The 1u1d rule converges on the 50% correct threshold — the level where the listener
+is at chance for a 2AFC task. This is the JND by definition, but the interpretation
+must not say the listener "can reliably detect differences" at this level. At the
+convergence point they are guessing. Levels below the JND (closer to reference) yield
+worse-than-chance performance; levels above (larger differences) yield better-than-chance.
+
+The correct framing is: "Threshold at level N" — the boundary between detectable and
+not detectable. Avoid implying the listener performs well at the threshold level itself.
+
+For 1u2d (70.7%) and 1u3d (79.4%), the convergence point is above chance, so the
+listener does perform above chance at the threshold. But even then, "reliably detect"
+overstates it — the threshold is where performance drops to that specific percentage,
+not where it is strong.
+
 ## SE as Context, Not Judgment
 
 SE is reported alongside the result so that someone knowledgeable can assess

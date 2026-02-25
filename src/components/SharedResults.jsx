@@ -22,6 +22,7 @@ export default function SharedResults({ configUrl, resultsParam }) {
     parseConfig(configUrl)
       .then((cfg) => {
         setConfig(cfg);
+        document.title = `Results — ${cfg.name} — DBT`;
         const decoded = decodeTestResults(resultsParam, cfg);
         setStats(decoded);
       })
