@@ -25,7 +25,7 @@ function interpretStaircase(stats) {
   if (stats.jndSD > stats.jnd * 0.5 && stats.jnd > 1) {
     return 'High variability in reversal levels. The JND estimate may be unreliable — consider more reversals.';
   }
-  return `JND estimated at level ${stats.jndLevel} (${stats.jndOptionName}). The listener can reliably detect differences at or above this level.`;
+  return `JND estimated at level ${stats.jndLevel} (${stats.jndOptionName}). The listener can reliably detect differences at or below this level.`;
 }
 
 /**

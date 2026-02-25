@@ -1,4 +1,4 @@
-name: Staircase Test (Tones)
+name: JND Staircase (Tones)
 welcome:
   description: |
     **Staircase JND Test — Debug Config**
@@ -11,6 +11,10 @@ welcome:
 
     10 staircase levels. All non-reference levels use the same 880Hz audio — the staircase algorithm
     controls which level is presented, but the audio difference is always obvious for testing purposes.
+
+    The test starts at level 5 (mid-range). The adaptive algorithm converges toward
+    your threshold from the middle, stepping up after incorrect answers and down
+    after correct ones.
 
 options:
   - name: Reference (440Hz)
@@ -37,7 +41,7 @@ options:
     audioUrl: test-audio/test-880.wav
 
 tests:
-  - name: Beep Detection Staircase
+  - name: JND Staircase (Tones)
     testType: 2afc-staircase
     description: Which track is the 440Hz reference tone?
     options:
