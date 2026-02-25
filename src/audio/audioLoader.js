@@ -123,3 +123,18 @@ export function createAudioBuffer(audioContext, decoded) {
   }
   return buffer;
 }
+
+/**
+ * Create a Map of AudioBuffers from a decoded audio cache — one buffer per unique URL.
+ * Call once after decode; reuse the returned map across all iterations.
+ * @param {AudioContext} audioContext
+ * @param {Map<string, DecodedAudio>} decodedCache - Map<url, DecodedAudio>
+ * @returns {Map<string, AudioBuffer>} Map<url, AudioBuffer>
+ */
+export function createAudioBufferMap(audioContext, decodedCache) {
+  const map = new Map();
+  for (const [url, decoded] of decodedCache) {
+    map.set(url, createAudioBuffer(audioContext, decoded));
+  }
+  return map;
+}

@@ -6,13 +6,14 @@
  * 1. Parse config → collect all unique audio URLs
  * 2. Fetch + decode all audio files once → cache decoded data by URL
  * 3. Create AudioEngine once at source sample rate
- * 4. Per test iteration: build AudioBuffers for the current options, load into engine
+ * 4. Create AudioBuffers once from decoded cache (one per unique URL)
+ * 5. Per test iteration: build array of AudioBuffer references, load into engine
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Box, CircularProgress, Container, Typography } from '@mui/material';
 import { parseConfig } from '../utils/config';
-import { loadAndValidate, createAudioBuffer } from '../audio/audioLoader';
+import { loadAndValidate, createAudioBufferMap } from '../audio/audioLoader';
 import { AudioEngine } from '../audio/audioEngine';
 import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
@@ -35,6 +36,8 @@ export default function TestRunner({ configUrl }) {
 
   // Decoded audio cache: Map<url, DecodedAudio>
   const decodedCacheRef = useRef(new Map());
+  // AudioBuffer cache: Map<url, AudioBuffer> — created once, reused every iteration
+  const audioBufferMapRef = useRef(null);
   const [audioSampleRate, setAudioSampleRate] = useState(null);
   const [audioInitialized, setAudioInitialized] = useState(false);
   const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
@@ -85,6 +88,9 @@ export default function TestRunner({ configUrl }) {
   const engineRef = useRef(null);
   if (audioSampleRate && !engineRef.current) {
     engineRef.current = new AudioEngine(audioSampleRate);
+    audioBufferMapRef.current = createAudioBufferMap(
+      engineRef.current.context, decodedCacheRef.current
+    );
     window.__engine = engineRef.current; // dev console access
   }
   const engine = engineRef.current;
@@ -193,17 +199,15 @@ export default function TestRunner({ configUrl }) {
   }, [config, testStep]);
 
   /**
-   * Build AudioBuffers from iterationData.bufferSources and load into engine.
+   * Look up pre-built AudioBuffers by URL and load into engine.
+   * No data is copied — just references in the order dictated by the test protocol.
    * @param {{ bufferSources: object[] }} iterationData
    */
   const loadIterationAudio = useCallback((iterationData) => {
     if (!engineRef.current) return;
-    const ctx = engineRef.current.context;
-    const cache = decodedCacheRef.current;
-    const buffers = iterationData.bufferSources.map((opt) => {
-      const decoded = cache.get(opt.audioUrl);
-      return createAudioBuffer(ctx, decoded);
-    });
+    const buffers = iterationData.bufferSources.map((opt) =>
+      audioBufferMapRef.current.get(opt.audioUrl)
+    );
     engineRef.current.loadBuffers(buffers);
   }, []);
 
