@@ -26,7 +26,7 @@ import { createShareUrl } from '../utils/share';
 export default function Results({ description, results, config, precomputedStats, onRestart }) {
   const [copied, setCopied] = useState(false);
 
-  const { abStats, abxStats, abxyStats, triangleStats, sdStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
+  const { abStats, abxStats, abxyStats, triangleStats, sdStats, staircaseStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
     if (precomputedStats) {
       // Precomputed stats have _baseType from share.js decoding;
       // fall back to config lookup for older share URLs without it
@@ -43,12 +43,14 @@ export default function Results({ description, results, config, precomputedStats
       const abxy = precomputedStats.filter((s) => getBase(s) === 'abxy');
       const tri = precomputedStats.filter((s) => getBase(s) === 'triangle');
       const sd = precomputedStats.filter((s) => getBase(s) === '2afc-sd');
+      const sc = precomputedStats.filter((s) => getBase(s) === '2afc-staircase');
       return {
         abStats: ab,
         abxStats: abx,
         abxyStats: abxy,
         triangleStats: tri,
         sdStats: sd,
+        staircaseStats: sc,
         abTagStats: computeAbTagStats(ab, config),
         abxTagStats: computeAbxTagStats([...abx, ...abxy, ...tri, ...sd], config),
         shareUrl: null,
@@ -60,6 +62,7 @@ export default function Results({ description, results, config, precomputedStats
     const abxy = [];
     const tri = [];
     const sd = [];
+    const sc = [];
 
     for (const result of results) {
       const { entry, baseType } = getTestType(result.testType);
@@ -71,15 +74,18 @@ export default function Results({ description, results, config, precomputedStats
       else if (baseType === 'abxy') abxy.push(stats);
       else if (baseType === 'triangle') tri.push(stats);
       else if (baseType === '2afc-sd') sd.push(stats);
+      else if (baseType === '2afc-staircase') sc.push(stats);
     }
 
-    const allStats = [...ab, ...abx, ...abxy, ...tri, ...sd];
+    // Staircase excluded from allStats for tag aggregation (measures JND, not preference/discrimination)
+    const allStats = [...ab, ...abx, ...abxy, ...tri, ...sd, ...sc];
     return {
       abStats: ab,
       abxStats: abx,
       abxyStats: abxy,
       triangleStats: tri,
       sdStats: sd,
+      staircaseStats: sc,
       abTagStats: computeAbTagStats(ab, config),
       abxTagStats: computeAbxTagStats([...abx, ...abxy, ...tri, ...sd], config),
       shareUrl: createShareUrl(allStats, config),
@@ -135,6 +141,12 @@ export default function Results({ description, results, config, precomputedStats
         {sdStats.map((s, i) => {
           const StatsComp = TEST_TYPES['2afc-sd'].statsComponent;
           return <StatsComp key={`sd-${i}`} stats={s} />;
+        })}
+
+        {/* Staircase test results */}
+        {staircaseStats.map((s, i) => {
+          const StatsComp = TEST_TYPES['2afc-staircase'].statsComponent;
+          return <StatsComp key={`sc-${i}`} stats={s} />;
         })}
 
         {/* Tag aggregated stats */}

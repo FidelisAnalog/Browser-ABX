@@ -5,6 +5,8 @@
  * ABX identification statistics, and tag-based aggregation.
  */
 
+import { computeJND, checkFloorCeiling, computeInterleavedJND } from './staircase';
+
 // --- Gamma function and CDF for chi-squared p-values ---
 
 function logGamma(z) {
@@ -435,6 +437,95 @@ export function computeSameDiffStats(name, optionNames, userSelectionsAndCorrect
     total,
     pValue,
     confidenceBreakdown,
+  };
+}
+
+// --- 2AFC Staircase Statistics ---
+
+/**
+ * Compute staircase test statistics from trial data + final state.
+ *
+ * staircaseData contains:
+ *   - trials: array of { level, isCorrect } per trial
+ *   - finalState: completed staircase state (or interleaved state)
+ *   - interleaved: boolean
+ *
+ * @param {string} name - Test name
+ * @param {string[]} optionNames - Option names (quality levels, ordered)
+ * @param {object} staircaseData - { trials, finalState, interleaved }
+ * @returns {object} Staircase stats
+ */
+export function computeStaircaseStats(name, optionNames, staircaseData) {
+  // Guard: if staircaseData is still empty array (no trials completed), return empty stats
+  if (Array.isArray(staircaseData) || !staircaseData?.finalState) {
+    return {
+      name,
+      optionNames,
+      jnd: 0,
+      jndSD: 0,
+      jndLevel: 0,
+      jndOptionName: 'N/A',
+      reversalsUsed: [],
+      totalTrials: 0,
+      totalCorrect: 0,
+      totalIncorrect: 0,
+      reversalCount: 0,
+      floorCeiling: null,
+      interleaved: false,
+      trials: [],
+    };
+  }
+
+  const { finalState, interleaved } = staircaseData;
+
+  let jndResult;
+  let floorCeiling;
+  let totalTrials;
+  let totalCorrect;
+  let reversalCount;
+  let allTrials;
+
+  if (interleaved) {
+    jndResult = computeInterleavedJND(finalState);
+    // Aggregate trials from both tracks
+    allTrials = finalState.tracks.flatMap((t) => t.trials);
+    totalTrials = allTrials.length;
+    totalCorrect = allTrials.filter((t) => t.isCorrect).length;
+    reversalCount = finalState.tracks.reduce((sum, t) => sum + t.reversals.length, 0);
+    // Check floor/ceiling on each track
+    const fc0 = checkFloorCeiling(finalState.tracks[0]);
+    const fc1 = checkFloorCeiling(finalState.tracks[1]);
+    floorCeiling = fc0 || fc1 || null;
+  } else {
+    jndResult = computeJND(finalState);
+    allTrials = finalState.trials;
+    totalTrials = allTrials.length;
+    totalCorrect = allTrials.filter((t) => t.isCorrect).length;
+    reversalCount = finalState.reversals.length;
+    floorCeiling = checkFloorCeiling(finalState);
+  }
+
+  // Map JND level to option name (level 1 → optionNames[1], since optionNames[0] is reference)
+  const jndLevel = Math.round(jndResult.jnd);
+  const jndOptionName = (jndLevel >= 1 && jndLevel < optionNames.length)
+    ? optionNames[jndLevel]
+    : `Level ${jndLevel}`;
+
+  return {
+    name,
+    optionNames,
+    jnd: jndResult.jnd,
+    jndSD: jndResult.sd,
+    jndLevel,
+    jndOptionName,
+    reversalsUsed: jndResult.reversalsUsed || (jndResult.tracks ? jndResult.tracks.flatMap((t) => t.reversalsUsed) : []),
+    totalTrials,
+    totalCorrect,
+    totalIncorrect: totalTrials - totalCorrect,
+    reversalCount,
+    floorCeiling,
+    interleaved,
+    trials: allTrials,
   };
 }
 

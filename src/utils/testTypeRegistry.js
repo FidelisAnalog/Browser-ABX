@@ -1,7 +1,7 @@
 /**
  * Test type registry — central lookup for all test type behavior.
  *
- * Each base type (ab, abx, triangle) maps to a descriptor containing
+ * Each base type (ab, abx, triangle, etc.) maps to a descriptor containing
  * component references, stats functions, and behavioral flags.
  * The +C confidence suffix is handled by parseTestType(), not as
  * separate registry entries.
@@ -12,12 +12,15 @@ import ABXTest from '../components/ABXTest';
 import ABXYTest from '../components/ABXYTest';
 import TriangleTest from '../components/TriangleTest';
 import SameDiffTest from '../components/SameDiffTest';
+import StaircaseTest from '../components/StaircaseTest';
 import ABStats from '../components/ABStats';
 import ABXStats from '../components/ABXStats';
 import TriangleStats from '../components/TriangleStats';
 import SameDiffStats from '../components/SameDiffStats';
+import StaircaseStats from '../components/StaircaseStats';
 import {
   computeAbStats, computeAbxStats, computeTriangleStats, computeSameDiffStats,
+  computeStaircaseStats,
 } from '../stats/statistics';
 
 /**
@@ -47,6 +50,7 @@ export const TEST_TYPES = {
     waveformExtraTracks: 0,
     submitType: 'ab',
     shareEncoding: 'ab',
+    isAdaptive: false,
   },
   abx: {
     testComponent: ABXTest,
@@ -58,6 +62,7 @@ export const TEST_TYPES = {
     waveformExtraTracks: 1,
     submitType: 'abx',
     shareEncoding: 'abx',
+    isAdaptive: false,
   },
   abxy: {
     testComponent: ABXYTest,
@@ -69,6 +74,7 @@ export const TEST_TYPES = {
     waveformExtraTracks: 2,
     submitType: 'abx',
     shareEncoding: 'abx',
+    isAdaptive: false,
   },
   triangle: {
     testComponent: TriangleTest,
@@ -80,6 +86,7 @@ export const TEST_TYPES = {
     waveformExtraTracks: 1,
     submitType: 'abx',
     shareEncoding: 'triangle',
+    isAdaptive: false,
   },
   '2afc-sd': {
     testComponent: SameDiffTest,
@@ -91,6 +98,19 @@ export const TEST_TYPES = {
     waveformExtraTracks: 0,
     submitType: 'samediff',
     shareEncoding: '2afc-sd',
+    isAdaptive: false,
+  },
+  '2afc-staircase': {
+    testComponent: StaircaseTest,
+    statsComponent: StaircaseStats,
+    computeStats: computeStaircaseStats,
+    resultDataKey: 'staircaseData',
+    supportsConfidence: false,
+    reshuffleEveryIteration: false,
+    waveformExtraTracks: 0,
+    submitType: 'staircase',
+    shareEncoding: '2afc-staircase',
+    isAdaptive: true,
   },
 };
 

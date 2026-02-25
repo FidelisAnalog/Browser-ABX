@@ -115,6 +115,23 @@ export function encodeTestResults(allTestStats, config) {
       bytes.push(stats.misses);
       bytes.push(stats.falseAlarms);
       bytes.push(stats.correctRejections);
+    } else if (entry.shareEncoding === '2afc-staircase') {
+      // Staircase: reversal levels + totals + floor/ceiling + trial-by-trial data
+      const reversals = stats.reversalsUsed || [];
+      bytes.push(reversals.length);
+      for (const level of reversals) {
+        bytes.push(level);
+      }
+      bytes.push(stats.totalTrials);
+      bytes.push(stats.totalCorrect);
+      // Floor/ceiling flag: 0=normal, 1=floor, 2=ceiling
+      bytes.push(stats.floorCeiling === 'floor' ? 1 : stats.floorCeiling === 'ceiling' ? 2 : 0);
+      // Trial data: 1 byte per trial — high bit = isCorrect, lower 7 bits = level
+      const trials = stats.trials || [];
+      bytes.push(trials.length);
+      for (const trial of trials) {
+        bytes.push((trial.isCorrect ? 0x80 : 0) | (trial.level & 0x7F));
+      }
     } else if (entry.shareEncoding === 'ab') {
       // AB: encode count per option
       for (const opt of stats.options) {
@@ -293,6 +310,58 @@ export function decodeTestResults(dataStr, config) {
       }
 
       stats.push(decoded);
+    } else if (typeEntry.shareEncoding === '2afc-staircase') {
+      // Staircase: decode reversal levels + totals + floor/ceiling + trial data
+      const test = config.tests[testOrd];
+      const testOptionNames = test ? test.options.map((o) => o.name) : [];
+      const nReversals = bytes[i++];
+      const reversalsUsed = [];
+      for (let j = 0; j < nReversals; j++) {
+        reversalsUsed.push(bytes[i++]);
+      }
+      const totalTrials = bytes[i++];
+      const totalCorrect = bytes[i++];
+      const fcFlag = bytes[i++];
+      const floorCeiling = fcFlag === 1 ? 'floor' : fcFlag === 2 ? 'ceiling' : null;
+
+      // Decode trial-by-trial data: 1 byte per trial, high bit = isCorrect, lower 7 = level
+      const nTrials = bytes[i++];
+      const trials = [];
+      for (let j = 0; j < nTrials; j++) {
+        const packed = bytes[i++];
+        trials.push({ level: packed & 0x7F, isCorrect: !!(packed & 0x80) });
+      }
+
+      // Compute JND from reversal values
+      const jnd = reversalsUsed.length > 0
+        ? reversalsUsed.reduce((a, b) => a + b, 0) / reversalsUsed.length
+        : 0;
+      const jndVariance = reversalsUsed.length > 1
+        ? reversalsUsed.reduce((sum, v) => sum + (v - jnd) ** 2, 0) / (reversalsUsed.length - 1)
+        : 0;
+      const jndSD = Math.sqrt(jndVariance);
+      const jndLevel = Math.round(jnd);
+      const jndOptionName = (jndLevel >= 1 && jndLevel < testOptionNames.length)
+        ? testOptionNames[jndLevel]
+        : `Level ${jndLevel}`;
+
+      stats.push({
+        name: testName,
+        _baseType: baseType,
+        optionNames: testOptionNames,
+        jnd,
+        jndSD,
+        jndLevel,
+        jndOptionName,
+        reversalsUsed,
+        totalTrials,
+        totalCorrect,
+        totalIncorrect: totalTrials - totalCorrect,
+        reversalCount: nReversals,
+        floorCeiling,
+        interleaved: false,
+        trials,
+      });
     } else if (typeEntry.shareEncoding === 'ab') {
       // AB: decode option counts
       const test = config.tests[testOrd];

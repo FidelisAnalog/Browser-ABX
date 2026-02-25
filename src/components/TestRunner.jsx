@@ -16,6 +16,11 @@ import { loadAndValidate, createAudioBuffer } from '../audio/audioLoader';
 import { AudioEngine } from '../audio/audioEngine';
 import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
+import {
+  createStaircaseState, createInterleavedState, getCurrentLevel,
+  recordResponse, pickInterleavedTrack, recordInterleavedResponse,
+  isInterleavedComplete, minRemainingTrials, minInterleavedRemainingTrials,
+} from '../stats/staircase';
 import Welcome from './Welcome';
 import Results from './Results';
 import SampleRateInfo from './SampleRateInfo';
@@ -43,17 +48,18 @@ export default function TestRunner({ configUrl }) {
   // Current test options (shuffled once per test, persisted across iterations)
   const [currentOptions, setCurrentOptions] = useState([]);
   const shuffledOptionsRef = useRef([]);
-  const [xOption, setXOption] = useState(null);
-  const [yOption, setYOption] = useState(null);
 
-  // Triangle test state
-  const [triangleTriplet, setTriangleTriplet] = useState(null);
-  const [triangleCorrectOption, setTriangleCorrectOption] = useState(null);
+  // Per-iteration type-specific state (populated by setupIteration, read during render).
+  // Shape varies by test type — see setupIteration for each type's structure.
+  const iterationStateRef = useRef({});
+  const [iterationVersion, setIterationVersion] = useState(0);
 
-  // Same-different test state
-  const sameDiffTrialSeqRef = useRef([]);
-  const [sameDiffPair, setSameDiffPair] = useState(null);
-  const [sameDiffPairType, setSameDiffPairType] = useState(null);
+  // Per-test persistent state (e.g. 2AFC-SD trial sequence, staircase state)
+  const testStateRef = useRef({});
+
+  // Adaptive test state — persists across trials within a test.
+  // For staircase: holds the staircase state or interleaved state object.
+  const adaptiveStateRef = useRef(null);
 
   // Iteration timing
   const iterationStartRef = useRef(null);
@@ -175,43 +181,18 @@ export default function TestRunner({ configUrl }) {
   }, [config, testStep]);
 
   /**
-   * Build AudioBuffers for a set of options (+ optional X) and load into engine.
+   * Build AudioBuffers from iterationData.bufferSources and load into engine.
+   * @param {{ bufferSources: object[] }} iterationData
    */
-  const loadIterationAudio = useCallback((options, xOpt, yOpt, triplet, sdPair) => {
+  const loadIterationAudio = useCallback((iterationData) => {
     if (!engineRef.current) return;
     const ctx = engineRef.current.context;
     const cache = decodedCacheRef.current;
-
-    if (sdPair) {
-      // Same-different: load 2 pair buffers
-      const buffers = sdPair.map((opt) => {
-        const decoded = cache.get(opt.audioUrl);
-        return createAudioBuffer(ctx, decoded);
-      });
-      engineRef.current.loadBuffers(buffers);
-    } else if (triplet) {
-      // Triangle: load 3 triplet buffers
-      const buffers = triplet.map((opt) => {
-        const decoded = cache.get(opt.audioUrl);
-        return createAudioBuffer(ctx, decoded);
-      });
-      engineRef.current.loadBuffers(buffers);
-    } else {
-      // AB/ABX: load options + optional X
-      const buffers = options.map((opt) => {
-        const decoded = cache.get(opt.audioUrl);
-        return createAudioBuffer(ctx, decoded);
-      });
-      if (xOpt) {
-        const xDecoded = cache.get(xOpt.audioUrl);
-        buffers.push(createAudioBuffer(ctx, xDecoded));
-      }
-      if (yOpt) {
-        const yDecoded = cache.get(yOpt.audioUrl);
-        buffers.push(createAudioBuffer(ctx, yDecoded));
-      }
-      engineRef.current.loadBuffers(buffers);
-    }
+    const buffers = iterationData.bufferSources.map((opt) => {
+      const decoded = cache.get(opt.audioUrl);
+      return createAudioBuffer(ctx, decoded);
+    });
+    engineRef.current.loadBuffers(buffers);
   }, []);
 
   /**
@@ -239,13 +220,39 @@ export default function TestRunner({ configUrl }) {
     return seq;
   }, []);
 
-  // Setup test iteration — shuffle once on first iteration, reuse on repeats.
-  // When a new test starts, records the shuffled option order in results so the
-  // confusion matrix A/B mapping always matches what the user saw.
+  /**
+   * Build a staircase trial pair: reference + test at current level.
+   * Randomizes which track is A vs B.
+   * @param {object[]} options - Test options in order (index 0 = reference, 1..N = levels 1..N)
+   * @param {number} level - Current staircase level (1-based into non-reference options)
+   * @returns {{ pair: object[], referenceIdx: number }}
+   */
+  const buildStaircasePair = useCallback((options, level) => {
+    const reference = options[0];   // First option = reference
+    const test = options[level];    // Level 1 → options[1], level N → options[N]
+    // Randomize assignment to A/B
+    const referenceIdx = Math.random() < 0.5 ? 0 : 1;
+    const pair = referenceIdx === 0
+      ? [{ ...reference }, { ...test }]
+      : [{ ...test }, { ...reference }];
+    return { pair, referenceIdx };
+  }, []);
+
+  /**
+   * Setup test iteration — shuffle once on first iteration, reuse on repeats.
+   * When a new test starts, records the shuffled option order in results so the
+   * confusion matrix A/B mapping always matches what the user saw.
+   *
+   * Populates iterationStateRef with type-specific state and returns
+   * { options, bufferSources } for loadIterationAudio.
+   */
   const setupIteration = useCallback((test, testIndex, isNewTest, repeatIndex = 0) => {
     const { entry, baseType } = getTestType(test.testType);
-    const shouldReshuffle = isNewTest || entry.reshuffleEveryIteration;
-    const ordered = shouldReshuffle ? shuffle(test.options) : shuffledOptionsRef.current;
+
+    // Staircase: never shuffle options (order = quality levels)
+    const isStaircase = baseType === '2afc-staircase';
+    const shouldReshuffle = !isStaircase && (isNewTest || entry.reshuffleEveryIteration);
+    const ordered = shouldReshuffle ? shuffle(test.options) : (isStaircase ? test.options : shuffledOptionsRef.current);
     if (isNewTest) shuffledOptionsRef.current = ordered;
     setCurrentOptions(ordered);
 
@@ -258,45 +265,45 @@ export default function TestRunner({ configUrl }) {
       });
     }
 
-    let xOpt = null;
-    let yOpt = null;
-    let triplet = null;
-    let correctOdd = null;
+    let bufferSources;
 
     if (baseType === 'abx' || baseType === 'abxy') {
       const randomIndex = Math.floor(Math.random() * ordered.length);
       const randomOption = ordered[randomIndex];
-      xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
-      setXOption(xOpt);
+      const xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
 
       if (baseType === 'abxy') {
         const otherIndex = randomIndex === 0 ? 1 : 0;
         const otherOption = ordered[otherIndex];
-        yOpt = { name: 'Y', audioUrl: otherOption.audioUrl };
-        setYOption(yOpt);
+        const yOpt = { name: 'Y', audioUrl: otherOption.audioUrl };
+        iterationStateRef.current = { xOption: xOpt, yOption: yOpt };
+        bufferSources = [...ordered, xOpt, yOpt];
       } else {
-        setYOption(null);
+        iterationStateRef.current = { xOption: xOpt, yOption: null };
+        bufferSources = [...ordered, xOpt];
       }
     } else if (baseType === 'triangle') {
       // Pick one option as odd, duplicate the other
       const oddIdx = Math.floor(Math.random() * ordered.length);
       const dupIdx = oddIdx === 0 ? 1 : 0;
-      correctOdd = ordered[oddIdx];
+      const correctOdd = ordered[oddIdx];
       // Build triplet: [dup, odd, dup] then shuffle
-      triplet = shuffle([
+      const triplet = shuffle([
         { ...ordered[dupIdx] },
         { ...correctOdd },
         { ...ordered[dupIdx] },
       ]);
-      setTriangleTriplet(triplet);
-      setTriangleCorrectOption(correctOdd);
+      iterationStateRef.current = { triplet, correctOption: correctOdd };
+      bufferSources = triplet;
     } else if (baseType === '2afc-sd') {
       // Generate trial sequence on first iteration
       if (isNewTest) {
-        sameDiffTrialSeqRef.current = generateTrialSequence(test.repeat, test.balanced);
+        testStateRef.current = {
+          trialSeq: generateTrialSequence(test.repeat, test.balanced),
+        };
       }
       // Pop the next trial type
-      const trialType = sameDiffTrialSeqRef.current[repeatIndex];
+      const trialType = testStateRef.current.trialSeq[repeatIndex];
       const pType = (trialType === 'AA' || trialType === 'BB') ? 'same' : 'different';
       // Build pair from the two options (ordered[0]=A, ordered[1]=B)
       const pairMap = {
@@ -306,20 +313,48 @@ export default function TestRunner({ configUrl }) {
         BA: [ordered[1], ordered[0]],
       };
       const sdPair = pairMap[trialType].map((o) => ({ ...o }));
-      setSameDiffPair(sdPair);
-      setSameDiffPairType(pType);
-      iterationStartRef.current = Date.now();
-      return { shuffled: ordered, xOpt: null, yOpt: null, triplet: null, sdPair };
+      iterationStateRef.current = { pair: sdPair, pairType: pType };
+      bufferSources = sdPair;
+    } else if (isStaircase) {
+      // Initialize staircase state on first iteration
+      if (isNewTest) {
+        const sc = test.staircase;
+        if (sc.interleave) {
+          adaptiveStateRef.current = createInterleavedState(sc);
+        } else {
+          adaptiveStateRef.current = createStaircaseState(sc);
+        }
+      }
+
+      // Get current level from the adaptive state
+      let level;
+      let trackIdx = null;
+      const state = adaptiveStateRef.current;
+      if (test.staircase.interleave) {
+        trackIdx = pickInterleavedTrack(state);
+        level = getCurrentLevel(state.tracks[trackIdx]);
+      } else {
+        level = getCurrentLevel(state);
+      }
+
+      const { pair, referenceIdx } = buildStaircasePair(ordered, level);
+      iterationStateRef.current = {
+        pair,
+        referenceIdx,
+        testLevel: level,
+        interleavedTrackIdx: trackIdx,
+      };
+      bufferSources = pair;
     } else {
-      setXOption(null);
-      setYOption(null);
-      setTriangleTriplet(null);
-      setTriangleCorrectOption(null);
+      // AB: options are the buffers
+      iterationStateRef.current = {};
+      bufferSources = ordered;
     }
 
     iterationStartRef.current = Date.now();
-    return { shuffled: ordered, xOpt, yOpt, triplet, sdPair: null };
-  }, [generateTrialSequence]);
+    setIterationVersion((v) => v + 1);
+    return { options: ordered, bufferSources };
+  }, [generateTrialSequence, buildStaircasePair]);
 
   // Start test (from welcome screen)
   const handleStart = useCallback((formData) => {
@@ -327,8 +362,8 @@ export default function TestRunner({ configUrl }) {
     setTestStep(0);
     setRepeatStep(0);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt, yOpt, triplet, sdPair } = setupIteration(config.tests[0], 0, true);
-      loadIterationAudio(shuffled, xOpt, yOpt, triplet, sdPair);
+      const iterationData = setupIteration(config.tests[0], 0, true);
+      loadIterationAudio(iterationData);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -336,6 +371,7 @@ export default function TestRunner({ configUrl }) {
   const handleRestart = useCallback(() => {
     setTestStep(0);
     setRepeatStep(0);
+    adaptiveStateRef.current = null;
     // Reset results and update optionNames to shuffled order for first test
     const freshResults = config.tests.map((test) => {
       const { entry } = getTestType(test.testType);
@@ -349,8 +385,8 @@ export default function TestRunner({ configUrl }) {
     });
     setResults(freshResults);
     if (config.tests.length > 0) {
-      const { shuffled, xOpt, yOpt, triplet, sdPair } = setupIteration(config.tests[0], 0, true);
-      loadIterationAudio(shuffled, xOpt, yOpt, triplet, sdPair);
+      const iterationData = setupIteration(config.tests[0], 0, true);
+      loadIterationAudio(iterationData);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
@@ -397,23 +433,86 @@ export default function TestRunner({ configUrl }) {
     advanceStep(newResults);
   };
 
-  // Advance to next iteration or test
-  const advanceStep = (updatedResults) => {
+  // Handle staircase test submission
+  const handleStaircaseSubmit = (selectedIdx) => {
+    const now = Date.now();
+    const { referenceIdx, testLevel, interleavedTrackIdx } = iterationStateRef.current;
+    const isCorrect = selectedIdx === referenceIdx;
     const test = config.tests[testStep];
 
-    if (repeatStep + 1 < test.repeat) {
-      // Next repeat of same test
+    // Update adaptive state
+    const state = adaptiveStateRef.current;
+    if (test.staircase.interleave) {
+      recordInterleavedResponse(state, interleavedTrackIdx, isCorrect);
+    } else {
+      recordResponse(state, isCorrect);
+    }
+
+    // Record trial in results
+    const newResults = JSON.parse(JSON.stringify(results));
+    const staircaseData = newResults[testStep].staircaseData;
+
+    // On first trial, staircaseData is [], convert to structured object
+    if (Array.isArray(staircaseData) && staircaseData.length === 0) {
+      newResults[testStep].staircaseData = {
+        trials: [],
+        finalState: null,
+        interleaved: test.staircase.interleave,
+      };
+    }
+
+    newResults[testStep].staircaseData.trials.push({
+      level: testLevel,
+      isCorrect,
+      startedAt: iterationStartRef.current,
+      finishedAt: now,
+    });
+
+    // Check if staircase is complete
+    const complete = test.staircase.interleave
+      ? isInterleavedComplete(state)
+      : state.complete;
+
+    if (complete) {
+      // Deep copy the final adaptive state into results
+      newResults[testStep].staircaseData.finalState = JSON.parse(JSON.stringify(state));
+    }
+
+    setResults(newResults);
+    advanceStep(newResults, complete);
+  };
+
+  /**
+   * Advance to next iteration or test.
+   * @param {object[]} updatedResults
+   * @param {boolean} [adaptiveComplete] - For adaptive types: whether the algorithm says we're done
+   */
+  const advanceStep = (updatedResults, adaptiveComplete) => {
+    const test = config.tests[testStep];
+    const { entry } = getTestType(test.testType);
+
+    // Determine if we should continue this test
+    let continueTest;
+    if (entry.isAdaptive) {
+      continueTest = !adaptiveComplete;
+    } else {
+      continueTest = repeatStep + 1 < test.repeat;
+    }
+
+    if (continueTest) {
+      // Next trial/repeat of same test
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      const { shuffled, xOpt, yOpt, triplet, sdPair } = setupIteration(test, testStep, false, nextRepeat);
-      loadIterationAudio(shuffled, xOpt, yOpt, triplet, sdPair);
+      const iterationData = setupIteration(test, testStep, false, nextRepeat);
+      loadIterationAudio(iterationData);
     } else if (testStep + 1 < config.tests.length) {
       // Next test
       const nextTest = testStep + 1;
       setTestStep(nextTest);
       setRepeatStep(0);
-      const { shuffled, xOpt, yOpt, triplet, sdPair } = setupIteration(config.tests[nextTest], nextTest, true);
-      loadIterationAudio(shuffled, xOpt, yOpt, triplet, sdPair);
+      adaptiveStateRef.current = null;
+      const iterationData = setupIteration(config.tests[nextTest], nextTest, true);
+      loadIterationAudio(iterationData);
     } else {
       // Done — show results
       setTestStep(config.tests.length);
@@ -478,18 +577,27 @@ export default function TestRunner({ configUrl }) {
 
   // Test screens
   const test = config.tests[testStep];
-  const stepStr = `${repeatStep + 1}/${test.repeat}`;
   const crossfadeForced = currentTest?.crossfade || false;
 
   const { entry, hasConfidence, baseType } = getTestType(test.testType);
   const TestComponent = entry.testComponent;
-  const submitHandler = entry.submitType === 'samediff' ? handleSameDiffSubmit
+
+  // Step string: adaptive types show "Trial N", fixed types show "N/total"
+  const stepStr = entry.isAdaptive
+    ? `Trial ${repeatStep + 1}`
+    : `${repeatStep + 1}/${test.repeat}`;
+
+  // Submit handler
+  const submitHandler = entry.submitType === 'staircase' ? handleStaircaseSubmit
+    : entry.submitType === 'samediff' ? handleSameDiffSubmit
     : entry.submitType === 'ab' ? handleAbSubmit
     : handleAbxSubmit;
 
-  // Common props shared by all test types
+  // Common props shared by all test types.
+  // Adaptive types remount every trial (pair changes); fixed types remount per test only.
+  const componentKey = entry.isAdaptive ? `${testStep}-${iterationVersion}` : testStep;
   const commonProps = {
-    key: testStep,
+    key: componentKey,
     name: test.name,
     description: test.description,
     stepStr,
@@ -499,14 +607,15 @@ export default function TestRunner({ configUrl }) {
     onSubmit: submitHandler,
   };
 
-  // Type-specific props
+  // Type-specific props — read from iterationStateRef
+  const iterState = iterationStateRef.current;
   let typeProps = {};
   if (baseType === 'ab') {
     typeProps = { options: currentOptions };
   } else if (baseType === 'abx') {
     typeProps = {
       options: currentOptions,
-      xOption,
+      xOption: iterState.xOption,
       totalIterations: test.repeat,
       iterationResults: results[testStep].userSelectionsAndCorrects,
       showConfidence: hasConfidence,
@@ -515,8 +624,8 @@ export default function TestRunner({ configUrl }) {
   } else if (baseType === 'abxy') {
     typeProps = {
       options: currentOptions,
-      xOption,
-      yOption,
+      xOption: iterState.xOption,
+      yOption: iterState.yOption,
       totalIterations: test.repeat,
       iterationResults: results[testStep].userSelectionsAndCorrects,
       showConfidence: hasConfidence,
@@ -524,8 +633,8 @@ export default function TestRunner({ configUrl }) {
     };
   } else if (baseType === 'triangle') {
     typeProps = {
-      triplet: triangleTriplet,
-      correctOption: triangleCorrectOption,
+      triplet: iterState.triplet,
+      correctOption: iterState.correctOption,
       totalIterations: test.repeat,
       iterationResults: results[testStep].userSelectionsAndCorrects,
       showConfidence: hasConfidence,
@@ -533,13 +642,31 @@ export default function TestRunner({ configUrl }) {
     };
   } else if (baseType === '2afc-sd') {
     typeProps = {
-      pair: sameDiffPair,
-      pairType: sameDiffPairType,
+      pair: iterState.pair,
+      pairType: iterState.pairType,
       options: currentOptions,
       totalIterations: test.repeat,
       iterationResults: results[testStep].userSelectionsAndCorrects,
       showConfidence: hasConfidence,
       showProgress: test.showProgress,
+    };
+  } else if (baseType === '2afc-staircase') {
+    const state = adaptiveStateRef.current;
+    const sc = test.staircase;
+    typeProps = {
+      pair: iterState.pair,
+      referenceIdx: iterState.referenceIdx,
+      testLevel: iterState.testLevel,
+      reversalCount: sc.interleave
+        ? state.tracks.reduce((sum, t) => sum + t.reversals.length, 0)
+        : state.reversals.length,
+      targetReversals: sc.interleave
+        ? sc.reversals * 2  // 2 tracks
+        : sc.reversals,
+      trialHistory: results[testStep].staircaseData?.trials || [],
+      minRemaining: sc.interleave
+        ? minInterleavedRemainingTrials(state)
+        : minRemainingTrials(state),
     };
   }
 

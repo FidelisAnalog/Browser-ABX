@@ -1,0 +1,62 @@
+name: Staircase Test (Tones)
+welcome:
+  description: |
+    **Staircase JND Test — Debug Config**
+
+    Two audio tracks per trial. One is the reference, the other is the test stimulus.
+    Identify which track is the reference.
+
+    - **Reference**: 440Hz steady tone
+    - **All other levels**: 880Hz steady tone (one octave higher)
+
+    10 staircase levels. All non-reference levels use the same 880Hz audio — the staircase algorithm
+    controls which level is presented, but the audio difference is always obvious for testing purposes.
+
+options:
+  - name: Reference (440Hz)
+    audioUrl: test-audio/reference.wav
+  - name: Level 1
+    audioUrl: test-audio/test-880.wav
+  - name: Level 2
+    audioUrl: test-audio/test-880.wav
+  - name: Level 3
+    audioUrl: test-audio/test-880.wav
+  - name: Level 4
+    audioUrl: test-audio/test-880.wav
+  - name: Level 5
+    audioUrl: test-audio/test-880.wav
+  - name: Level 6
+    audioUrl: test-audio/test-880.wav
+  - name: Level 7
+    audioUrl: test-audio/test-880.wav
+  - name: Level 8
+    audioUrl: test-audio/test-880.wav
+  - name: Level 9
+    audioUrl: test-audio/test-880.wav
+  - name: Level 10
+    audioUrl: test-audio/test-880.wav
+
+tests:
+  - name: Beep Detection Staircase
+    testType: 2afc-staircase
+    description: Which track is the 440Hz reference tone?
+    options:
+      - Reference (440Hz)
+      - Level 1
+      - Level 2
+      - Level 3
+      - Level 4
+      - Level 5
+      - Level 6
+      - Level 7
+      - Level 8
+      - Level 9
+      - Level 10
+    staircase:
+      rule: 1u1d
+      reversals: 6
+      maxTrials: 40
+      initialStep: 3
+      finalStep: 1
+      stepReductionAfter: 2
+      interleave: false
