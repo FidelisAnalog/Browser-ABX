@@ -724,9 +724,18 @@ const Waveform = React.memo(function Waveform({
     []
   );
 
-  // Computed handle positions
+  // Computed handle positions — clamped to container bounds to prevent page width expansion
   const startX = timeToX(loopRegion[0]);
   const endX = timeToX(loopRegion[1]);
+
+  // Handle hit areas clamped to [0, containerWidth]; not rendered when fully off-screen
+  const startHitLeft = Math.max(0, startX - HIT_OUTWARD);
+  const startHitRight = Math.min(containerWidth, startX + HIT_INWARD);
+  const startHitVisible = startHitRight > startHitLeft;
+
+  const endHitLeft = Math.max(0, endX - HIT_INWARD);
+  const endHitRight = Math.min(containerWidth, endX + HIT_OUTWARD);
+  const endHitVisible = endHitRight > endHitLeft;
 
   // Detect if zoomed for UI hints
   const isZoomed = viewStart > 0.001 || viewEnd < duration - 0.001;
@@ -771,6 +780,7 @@ const Waveform = React.memo(function Waveform({
         width: '100%',
         position: 'relative',
         userSelect: 'none',
+        overscrollBehaviorX: 'none',
         cursor: 'pointer',
         borderRadius: 1,
         border: '1px solid #e0e0e0',
@@ -787,6 +797,7 @@ const Waveform = React.memo(function Waveform({
           height: TOTAL_HEIGHT,
           overflowX: 'scroll',
           overflowY: 'hidden',
+          overscrollBehaviorX: 'none',
           WebkitOverflowScrolling: 'touch',
           touchAction: 'pan-x',
           scrollbarWidth: 'none',
@@ -861,35 +872,35 @@ const Waveform = React.memo(function Waveform({
           overflow: 'visible',
         }}>
           {/* Start handle hit area — biased left (outward) */}
-          <div
+          {startHitVisible && <div
             onPointerDown={handlePointerDown('start')}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             style={{
               position: 'absolute',
-              left: startX - HIT_OUTWARD,
-              width: HIT_OUTWARD + HIT_INWARD,
+              left: startHitLeft,
+              width: startHitRight - startHitLeft,
               height: '100%',
               cursor: 'col-resize',
               touchAction: 'none',
               pointerEvents: 'auto',
             }}
-          />
+          />}
           {/* End handle hit area — biased right (outward) */}
-          <div
+          {endHitVisible && <div
             onPointerDown={handlePointerDown('end')}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             style={{
               position: 'absolute',
-              left: endX - HIT_INWARD,
-              width: HIT_OUTWARD + HIT_INWARD,
+              left: endHitLeft,
+              width: endHitRight - endHitLeft,
               height: '100%',
               cursor: 'col-resize',
               touchAction: 'none',
               pointerEvents: 'auto',
             }}
-          />
+          />}
         </div>
 
       </>}
