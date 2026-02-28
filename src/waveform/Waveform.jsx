@@ -770,7 +770,7 @@ const Waveform = React.memo(function Waveform({
         cursor: 'pointer',
         borderRadius: 1,
         border: '1px solid #e0e0e0',
-        overflow: 'hidden',
+        overflow: 'clip',
         // Reserve space so layout doesn't jump when SVG appears
         minHeight: TOTAL_HEIGHT,
       }}
