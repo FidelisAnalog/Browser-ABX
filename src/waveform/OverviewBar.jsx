@@ -21,8 +21,7 @@ const WAVEFORM_ACTIVE_COLOR = '#1976d2';
 const BG_COLOR = '#eceff1';
 const VIEWPORT_BORDER = '#1976d2';
 const HANDLE_WIDTH = 6; // px hit area on viewport edges
-const CURSOR_COLOR = '#f57c00';
-const CURSOR_OPACITY = 0.45;
+const LOOP_REGION_COLOR = 'rgba(255, 152, 0, 0.15)';
 
 /**
  * @param {object} props
@@ -276,16 +275,23 @@ const OverviewBar = React.memo(function OverviewBar({
             <line x1={vpRight} y1={0} x2={vpRight} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
           </>}
 
-          {/* Loop cursor markers (display-only) */}
+          {/* Loop region highlight (display-only) */}
           {loopRegion && !(loopRegion[0] <= 0.001 && loopRegion[1] >= duration - 0.001) && <>
+            <rect
+              x={(loopRegion[0] / duration) * containerWidth}
+              y={0}
+              width={Math.max(0, ((loopRegion[1] - loopRegion[0]) / duration) * containerWidth)}
+              height={OVERVIEW_HEIGHT}
+              fill={LOOP_REGION_COLOR}
+              pointerEvents="none"
+            />
             <line
               x1={(loopRegion[0] / duration) * containerWidth}
               y1={0}
               x2={(loopRegion[0] / duration) * containerWidth}
               y2={OVERVIEW_HEIGHT}
-              stroke={CURSOR_COLOR}
+              stroke="#f57c00"
               strokeWidth={1.5}
-              opacity={CURSOR_OPACITY}
               pointerEvents="none"
             />
             <line
@@ -293,9 +299,8 @@ const OverviewBar = React.memo(function OverviewBar({
               y1={0}
               x2={(loopRegion[1] / duration) * containerWidth}
               y2={OVERVIEW_HEIGHT}
-              stroke={CURSOR_COLOR}
+              stroke="#f57c00"
               strokeWidth={1.5}
-              opacity={CURSOR_OPACITY}
               pointerEvents="none"
             />
           </>}

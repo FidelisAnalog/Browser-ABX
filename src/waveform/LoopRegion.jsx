@@ -40,14 +40,14 @@ const LoopRegion = React.memo(function LoopRegion({
           <rect
             x={0}
             y={0}
-            width={startX}
+            width={Math.max(0, startX)}
             height={height}
             fill="rgba(0,0,0,0.15)"
           />
           <rect
             x={endX}
             y={0}
-            width={width - endX}
+            width={Math.max(0, width - endX)}
             height={height}
             fill="rgba(0,0,0,0.15)"
           />
@@ -59,7 +59,7 @@ const LoopRegion = React.memo(function LoopRegion({
         <rect
           x={startX}
           y={0}
-          width={regionWidth}
+          width={Math.max(0, regionWidth)}
           height={height}
           fill={REGION_COLOR}
         />

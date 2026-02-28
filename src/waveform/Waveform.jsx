@@ -38,7 +38,6 @@ const MIN_VIEW_DURATION = 0.05;  // 50ms minimum visible range
 const MAX_ZOOM_RATIO = 1000;     // max zoom = duration / 1000
 const ZOOM_FACTOR = 0.008;       // zoom sensitivity for wheel events
 const PAN_FACTOR = 0.25;         // pan by 25% of view width per Shift+scroll step
-const COOPERATIVE_TOOLTIP_MS = 1500; // how long to show "Ctrl+scroll to zoom" hint
 
 /**
  * @param {object} props
@@ -63,6 +62,7 @@ const Waveform = React.memo(function Waveform({
   const draggingRef = useRef(null); // 'start' | 'end' | null
   const containerRectRef = useRef(null);
   const panDragRef = useRef({ active: false, startX: 0, startViewStart: 0, startViewEnd: 0, moved: false });
+  const momentumRef = useRef({ rafId: null, velocity: 0, samples: [] });
 
   // Refs so pointer handlers always read current values (no stale closures)
   const loopRegionRef = useRef(loopRegion);
@@ -90,9 +90,6 @@ const Waveform = React.memo(function Waveform({
     setViewEnd(duration);
   }, [duration]);
 
-  // Cooperative tooltip state
-  const [showZoomHint, setShowZoomHint] = useState(false);
-  const hintTimerRef = useRef(null);
 
   // Measure container width — start at 0 so the SVG is not rendered until
   // the ResizeObserver fires with the real width (avoids a width-flash).
@@ -415,18 +412,17 @@ const Waveform = React.memo(function Waveform({
         // Trackpad fires small deltas (1-10px); scale to fraction of view width
         applyPan(delta / 500);
       } else {
-        // Plain scroll over waveform — show cooperative hint, let page scroll
+        // No modifier — horizontal scroll pans waveform when zoomed
         const vs = viewStartRef.current;
         const ve = viewEndRef.current;
         const dur = durationRef.current;
         const isZoomed = vs > 0.001 || ve < dur - 0.001;
-        if (isZoomed) {
-          // If zoomed, show hint
-          setShowZoomHint(true);
-          if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
-          hintTimerRef.current = setTimeout(() => setShowZoomHint(false), COOPERATIVE_TOOLTIP_MS);
+        if (isZoomed && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+          e.preventDefault();
+          startWheelGesture();
+          applyPan(e.deltaX / 500);
         }
-        // Don't preventDefault — let page scroll naturally
+        // Otherwise let page scroll naturally
       }
     };
 
@@ -455,7 +451,6 @@ const Waveform = React.memo(function Waveform({
       el.removeEventListener('wheel', handleWheel);
       el.removeEventListener('gesturestart', handleGestureStart);
       el.removeEventListener('gesturechange', handleGestureChange);
-      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
       if (gestureEndTimer) clearTimeout(gestureEndTimer);
     };
   }, [applyZoom, applyPan, checkFollowEngage]);
@@ -536,12 +531,28 @@ const Waveform = React.memo(function Waveform({
     resetZoom();
   }, [resetZoom]);
 
+  // --- Momentum helpers ---
+
+  const cancelMomentum = useCallback(() => {
+    const m = momentumRef.current;
+    if (m.rafId) {
+      cancelAnimationFrame(m.rafId);
+      m.rafId = null;
+    }
+    m.velocity = 0;
+    m.samples = [];
+  }, []);
+
+  // Cleanup momentum on unmount
+  useEffect(() => () => cancelMomentum(), [cancelMomentum]);
+
   // --- Waveform pointer handlers: click-to-seek + drag-to-pan ---
 
   const handleWaveformPointerDown = useCallback(
     (e) => {
       if (dragActiveRef.current) return;
       if (!svgRef.current || duration <= 0) return;
+      cancelMomentum();
       e.target.setPointerCapture(e.pointerId);
       const rect = svgRef.current.getBoundingClientRect();
       panDragRef.current = {
@@ -551,8 +562,9 @@ const Waveform = React.memo(function Waveform({
         startViewEnd: viewEndRef.current,
         moved: false,
       };
+      momentumRef.current.samples = [];
     },
-    [duration]
+    [duration, cancelMomentum]
   );
 
   const handleWaveformPointerMove = useCallback(
@@ -569,6 +581,20 @@ const Waveform = React.memo(function Waveform({
         svgRef.current.style.cursor = 'grabbing';
       }
       if (!pd.moved) return;
+
+      // Continuously compute and store velocity (px/ms) from last few samples.
+      // This survives the macOS three-finger drag delay on pointerup.
+      const m = momentumRef.current;
+      const now = performance.now();
+      m.samples.push({ t: now, x });
+      if (m.samples.length > 4) m.samples.shift();
+      if (m.samples.length >= 2) {
+        const first = m.samples[0];
+        const last = m.samples[m.samples.length - 1];
+        const dt = last.t - first.t;
+        m.velocity = dt > 0 ? (last.x - first.x) / dt : 0;
+      }
+
       const w = widthRef.current;
       if (w <= 0) return;
       const viewDur = pd.startViewEnd - pd.startViewStart;
@@ -590,8 +616,66 @@ const Waveform = React.memo(function Waveform({
       pd.active = false;
       if (svgRef.current) svgRef.current.style.cursor = '';
       if (pd.moved) {
-        gestureActiveRef.current = false;
-        checkFollowEngage();
+        const m = momentumRef.current;
+        const velocity = m.velocity; // already computed during pointermove
+
+        const VELOCITY_THRESHOLD = 0.1; // px/ms (~100 px/s)
+        const FRICTION = 0.95;
+        const STOP_VELOCITY = 0.0005; // px/ms
+
+        if (Math.abs(velocity) > VELOCITY_THRESHOLD) {
+          // Start momentum with own position tracking (avoids React ref staleness)
+          const dur = durationRef.current;
+          const viewDur = viewEndRef.current - viewStartRef.current;
+          const w = widthRef.current;
+          let pos = viewStartRef.current;
+          let vel = velocity; // px/ms
+          let lastTime = performance.now();
+
+          const tick = () => {
+            const nowMs = performance.now();
+            const elapsed = nowMs - lastTime;
+            lastTime = nowMs;
+
+            vel *= Math.pow(FRICTION, elapsed / 16.67); // normalize to 60fps
+
+            if (Math.abs(vel) < STOP_VELOCITY) {
+              m.rafId = null;
+              gestureActiveRef.current = false;
+              checkFollowEngage();
+              return;
+            }
+
+            if (w > 0) {
+              const pxThisFrame = vel * elapsed;
+              const shift = (-pxThisFrame / w) * viewDur;
+              let newStart = pos + shift;
+              let newEnd = newStart + viewDur;
+
+              // Clamp
+              if (newStart < 0) { newStart = 0; newEnd = viewDur; }
+              if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
+
+              // Stop if clamped at edge
+              if (newStart === pos) {
+                m.rafId = null;
+                gestureActiveRef.current = false;
+                checkFollowEngage();
+                return;
+              }
+
+              pos = newStart;
+              setUserView(newStart, newEnd);
+            }
+
+            m.rafId = requestAnimationFrame(tick);
+          };
+
+          m.rafId = requestAnimationFrame(tick);
+        } else {
+          gestureActiveRef.current = false;
+          checkFollowEngage();
+        }
       } else {
         // No movement — treat as click-to-seek
         if (!svgRef.current || duration <= 0) return;
@@ -605,7 +689,7 @@ const Waveform = React.memo(function Waveform({
         followActiveRef.current = true;
       }
     },
-    [duration, onSeek, xToTime, checkFollowEngage]
+    [duration, onSeek, xToTime, checkFollowEngage, setUserView]
   );
 
   // --- Pointer event drag handlers for cursor handles ---
@@ -816,25 +900,6 @@ const Waveform = React.memo(function Waveform({
           />
         </div>
 
-      {/* Cooperative zoom hint */}
-      {showZoomHint && (
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          background: 'rgba(0,0,0,0.7)',
-          color: '#fff',
-          padding: '6px 14px',
-          borderRadius: 4,
-          fontSize: 13,
-          pointerEvents: 'none',
-          whiteSpace: 'nowrap',
-          zIndex: 10,
-        }}>
-          {navigator.userAgentData?.platform === 'macOS' || navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'} + scroll to zoom
-        </div>
-      )}
       </>}
     </Box>
     </>
