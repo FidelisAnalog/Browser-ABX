@@ -486,7 +486,6 @@ const Waveform = React.memo(function Waveform({
 
     const handleTouchMove = (e) => {
       if (!pinchActive || e.touches.length !== 2) return;
-      e.preventDefault();
       const newDist = getDistance(e.touches[0], e.touches[1]);
       const scale = initialDistance / newDist; // >1 = zoom out, <1 = zoom in
       const rect = el.getBoundingClientRect();
@@ -517,7 +516,7 @@ const Waveform = React.memo(function Waveform({
     };
 
     el.addEventListener('touchstart', handleTouchStart, { passive: true });
-    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchmove', handleTouchMove, { passive: true });
     el.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
