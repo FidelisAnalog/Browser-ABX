@@ -534,6 +534,7 @@ const Waveform = React.memo(function Waveform({
     let gestureEndTimer = null;
 
     const handleScroll = () => {
+      console.log('[scroll-diag] scroll event fired, scrollLeft:', el.scrollLeft, 'scrollWidth:', el.scrollWidth, 'clientWidth:', el.clientWidth);
       const dur = durationRef.current;
       const vs = viewStartRef.current;
       const ve = viewEndRef.current;
@@ -603,6 +604,7 @@ const Waveform = React.memo(function Waveform({
     (e) => {
       if (dragActiveRef.current) return;
       if (!svgRef.current || duration <= 0) return;
+      console.log('[scroll-diag] pointerdown type:', e.pointerType, 'target:', e.target.tagName);
       // Don't capture pointer for touch — let browser handle native scroll
       if (e.pointerType !== 'touch') {
         e.target.setPointerCapture(e.pointerId);
@@ -652,6 +654,7 @@ const Waveform = React.memo(function Waveform({
   );
 
   const handleWaveformPointerCancel = useCallback(() => {
+    console.log('[scroll-diag] pointercancel');
     panDragRef.current.startX = null;
   }, []);
 
