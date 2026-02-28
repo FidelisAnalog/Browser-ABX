@@ -61,8 +61,10 @@ const Waveform = React.memo(function Waveform({
   const dragActiveRef = useRef(false);
   const draggingRef = useRef(null); // 'start' | 'end' | null
   const containerRectRef = useRef(null);
-  const panDragRef = useRef({ active: false, startX: 0, startViewStart: 0, startViewEnd: 0, moved: false });
-  const momentumRef = useRef({ rafId: null, velocity: 0, samples: [] });
+  const panDragRef = useRef({ startX: null, moved: false });
+  const scrollRef = useRef(null);
+  const scrollCausedViewChangeRef = useRef(false);
+  const scrollEndTimerRef = useRef(null);
 
   // Refs so pointer handlers always read current values (no stale closures)
   const loopRegionRef = useRef(loopRegion);
@@ -525,162 +527,116 @@ const Waveform = React.memo(function Waveform({
     };
   }, [setUserView, checkFollowEngage]);
 
+  // --- Native scroll → view sync (touch pan with iOS momentum) ---
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let gestureEndTimer = null;
+
+    const handleScroll = () => {
+      const dur = durationRef.current;
+      const vs = viewStartRef.current;
+      const ve = viewEndRef.current;
+      const viewDur = ve - vs;
+      const w = widthRef.current;
+      if (dur <= 0 || w <= 0 || viewDur >= dur - 0.001) return;
+
+      const spacerW = w * (dur / viewDur);
+      const maxScroll = spacerW - w;
+      if (maxScroll <= 0) return;
+
+      const scrollLeft = el.scrollLeft;
+      const newStart = (scrollLeft / maxScroll) * (dur - viewDur);
+      const newEnd = newStart + viewDur;
+
+      scrollCausedViewChangeRef.current = true;
+      gestureActiveRef.current = true;
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
+      gestureEndTimer = setTimeout(() => {
+        gestureActiveRef.current = false;
+        checkFollowEngage();
+      }, 150);
+
+      setUserView(
+        Math.max(0, Math.min(newStart, dur - viewDur)),
+        Math.max(viewDur, Math.min(newEnd, dur))
+      );
+    };
+
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
+    };
+  }, [setUserView, checkFollowEngage]);
+
+  // --- View → scroll sync (zoom, seek, playhead follow update scroll position) ---
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (scrollCausedViewChangeRef.current) {
+      scrollCausedViewChangeRef.current = false;
+      return;
+    }
+    const dur = duration;
+    const viewDur = viewEnd - viewStart;
+    const w = containerWidth;
+    if (dur <= 0 || w <= 0 || viewDur >= dur - 0.001) {
+      el.scrollLeft = 0;
+      return;
+    }
+    const spacerW = w * (dur / viewDur);
+    const maxScroll = spacerW - w;
+    el.scrollLeft = (viewStart / (dur - viewDur)) * maxScroll;
+  }, [viewStart, viewEnd, duration, containerWidth]);
+
   // --- Double-click to reset zoom ---
 
   const handleDoubleClick = useCallback(() => {
     resetZoom();
   }, [resetZoom]);
 
-  // --- Momentum helpers ---
-
-  const cancelMomentum = useCallback(() => {
-    const m = momentumRef.current;
-    if (m.rafId) {
-      cancelAnimationFrame(m.rafId);
-      m.rafId = null;
-    }
-    m.velocity = 0;
-    m.samples = [];
-  }, []);
-
-  // Cleanup momentum on unmount
-  useEffect(() => () => cancelMomentum(), [cancelMomentum]);
-
-  // --- Waveform pointer handlers: click-to-seek + drag-to-pan ---
+  // --- Waveform pointer handlers: click-to-seek ---
 
   const handleWaveformPointerDown = useCallback(
     (e) => {
       if (dragActiveRef.current) return;
       if (!svgRef.current || duration <= 0) return;
-      e.target.setPointerCapture(e.pointerId);
-      const rect = svgRef.current.getBoundingClientRect();
-      const isTouch = e.pointerType === 'touch';
-      if (isTouch) {
-        cancelMomentum();
-        momentumRef.current.samples = [];
+      // Don't capture pointer for touch — let browser handle native scroll
+      if (e.pointerType !== 'touch') {
+        e.target.setPointerCapture(e.pointerId);
       }
+      const rect = svgRef.current.getBoundingClientRect();
       panDragRef.current = {
-        active: isTouch,
         startX: e.clientX - rect.left,
-        startViewStart: viewStartRef.current,
-        startViewEnd: viewEndRef.current,
         moved: false,
       };
     },
-    [duration, cancelMomentum]
+    [duration]
   );
 
   const handleWaveformPointerMove = useCallback(
     (e) => {
       const pd = panDragRef.current;
-      if (!pd.active) return;
+      if (pd.startX == null) return;
       if (!svgRef.current) return;
       const rect = svgRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      const dx = x - pd.startX;
-      if (!pd.moved && Math.abs(dx) > 3) {
+      if (!pd.moved && Math.abs(x - pd.startX) > 3) {
         pd.moved = true;
-        gestureActiveRef.current = true;
-        svgRef.current.style.cursor = 'grabbing';
       }
-      if (!pd.moved) return;
-
-      // Continuously compute and store velocity (px/ms) from last few samples.
-      // This survives the macOS three-finger drag delay on pointerup.
-      const m = momentumRef.current;
-      const now = performance.now();
-      m.samples.push({ t: now, x });
-      if (m.samples.length > 4) m.samples.shift();
-      if (m.samples.length >= 2) {
-        const first = m.samples[0];
-        const last = m.samples[m.samples.length - 1];
-        const dt = last.t - first.t;
-        m.velocity = dt > 0 ? (last.x - first.x) / dt : 0;
-      }
-
-      const w = widthRef.current;
-      if (w <= 0) return;
-      const viewDur = pd.startViewEnd - pd.startViewStart;
-      const dTime = -(dx / w) * viewDur;
-      const dur = durationRef.current;
-      let newStart = pd.startViewStart + dTime;
-      let newEnd = pd.startViewEnd + dTime;
-      if (newStart < 0) { newStart = 0; newEnd = Math.min(viewDur, dur); }
-      if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
-      setUserView(newStart, newEnd);
     },
-    [setUserView]
+    []
   );
 
   const handleWaveformPointerUp = useCallback(
     (e) => {
       const pd = panDragRef.current;
       if (pd.startX == null) return;
-
-      if (pd.active && pd.moved) {
-        // Touch drag completed — apply momentum
-        pd.active = false;
-        if (svgRef.current) svgRef.current.style.cursor = '';
-        const m = momentumRef.current;
-        const velocity = m.velocity;
-
-        const VELOCITY_THRESHOLD = 0.1; // px/ms (~100 px/s)
-        const FRICTION = 0.95;
-        const STOP_VELOCITY = 0.0005; // px/ms
-
-        if (Math.abs(velocity) > VELOCITY_THRESHOLD) {
-          const dur = durationRef.current;
-          const viewDur = viewEndRef.current - viewStartRef.current;
-          const w = widthRef.current;
-          let pos = viewStartRef.current;
-          let vel = velocity;
-          let lastTime = performance.now();
-
-          const tick = () => {
-            const nowMs = performance.now();
-            const elapsed = nowMs - lastTime;
-            lastTime = nowMs;
-
-            vel *= Math.pow(FRICTION, elapsed / 16.67);
-
-            if (Math.abs(vel) < STOP_VELOCITY) {
-              m.rafId = null;
-              gestureActiveRef.current = false;
-              checkFollowEngage();
-              return;
-            }
-
-            if (w > 0) {
-              const pxThisFrame = vel * elapsed;
-              const shift = (-pxThisFrame / w) * viewDur;
-              let newStart = pos + shift;
-              let newEnd = newStart + viewDur;
-
-              if (newStart < 0) { newStart = 0; newEnd = viewDur; }
-              if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
-
-              if (newStart === pos) {
-                m.rafId = null;
-                gestureActiveRef.current = false;
-                checkFollowEngage();
-                return;
-              }
-
-              pos = newStart;
-              setUserView(newStart, newEnd);
-            }
-
-            m.rafId = requestAnimationFrame(tick);
-          };
-
-          m.rafId = requestAnimationFrame(tick);
-        } else {
-          gestureActiveRef.current = false;
-          checkFollowEngage();
-        }
-      } else if (!pd.moved) {
-        // No movement — click-to-seek (any pointer type)
-        pd.active = false;
+      if (!pd.moved) {
+        // No movement — click/tap-to-seek
         if (!svgRef.current || duration <= 0) return;
         const rect = svgRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -690,14 +646,15 @@ const Waveform = React.memo(function Waveform({
         if (!isFullRange && (time < loopStart || time > loopEnd)) return;
         onSeek(time);
         followActiveRef.current = true;
-      } else {
-        pd.active = false;
       }
-
       pd.startX = null;
     },
-    [duration, onSeek, xToTime, checkFollowEngage, setUserView]
+    [duration, onSeek, xToTime]
   );
+
+  const handleWaveformPointerCancel = useCallback(() => {
+    panDragRef.current.startX = null;
+  }, []);
 
   // --- Pointer event drag handlers for cursor handles ---
 
@@ -769,6 +726,12 @@ const Waveform = React.memo(function Waveform({
   // Detect if zoomed for UI hints
   const isZoomed = viewStart > 0.001 || viewEnd < duration - 0.001;
 
+  // Spacer width for native scroll — proportional to zoom ratio
+  const viewDur = viewEnd - viewStart;
+  const spacerWidth = isZoomed && viewDur > 0
+    ? containerWidth * (duration / viewDur)
+    : containerWidth;
+
   // Overview bar view change handler
   const handleViewChange = useCallback((newStart, newEnd) => {
     setUserView(newStart, newEnd);
@@ -810,63 +773,81 @@ const Waveform = React.memo(function Waveform({
         overflow: 'hidden',
         // Reserve space so layout doesn't jump when SVG appears
         minHeight: TOTAL_HEIGHT,
-        touchAction: 'pan-x pan-y',
       }}
     >
-      {containerWidth > 0 && <><svg
-        ref={svgRef}
-        width={containerWidth}
-        height={TOTAL_HEIGHT}
-        onPointerDown={handleWaveformPointerDown}
-        onPointerMove={handleWaveformPointerMove}
-        onPointerUp={handleWaveformPointerUp}
-        onDoubleClick={handleDoubleClick}
-        style={{ display: 'block', touchAction: 'none' }}
+      {containerWidth > 0 && <>
+      {/* Scrollable wrapper — provides native touch momentum on iOS */}
+      <Box
+        ref={scrollRef}
+        sx={{
+          width: '100%',
+          height: TOTAL_HEIGHT,
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-x',
+          scrollbarWidth: 'none',
+          '&::-webkit-scrollbar': { display: 'none' },
+        }}
       >
-        {/* Background */}
-        <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={WAVEFORM_BG} />
+        <div style={{ width: spacerWidth, height: TOTAL_HEIGHT }}>
+          <svg
+            ref={svgRef}
+            width={containerWidth}
+            height={TOTAL_HEIGHT}
+            onPointerDown={handleWaveformPointerDown}
+            onPointerMove={handleWaveformPointerMove}
+            onPointerUp={handleWaveformPointerUp}
+            onPointerCancel={handleWaveformPointerCancel}
+            onDoubleClick={handleDoubleClick}
+            style={{ display: 'block', position: 'sticky', left: 0 }}
+          >
+            {/* Background */}
+            <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={WAVEFORM_BG} />
 
-        {/* Loop region visuals (shading, lines, triangles — no interaction) */}
-        <LoopRegion
-          loopRegion={loopRegion}
-          duration={duration}
-          width={containerWidth}
-          height={WAVEFORM_HEIGHT}
-          timeToX={timeToX}
-        />
+            {/* Loop region visuals (shading, lines, triangles — no interaction) */}
+            <LoopRegion
+              loopRegion={loopRegion}
+              duration={duration}
+              width={containerWidth}
+              height={WAVEFORM_HEIGHT}
+              timeToX={timeToX}
+            />
 
-        {/* Waveform */}
-        <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.7} />
+            {/* Waveform */}
+            <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.7} />
 
-        {/* Center line */}
-        <line
-          x1={0}
-          y1={WAVEFORM_HEIGHT / 2}
-          x2={containerWidth}
-          y2={WAVEFORM_HEIGHT / 2}
-          stroke="#bdbdbd"
-          strokeWidth={0.5}
-        />
+            {/* Center line */}
+            <line
+              x1={0}
+              y1={WAVEFORM_HEIGHT / 2}
+              x2={containerWidth}
+              y2={WAVEFORM_HEIGHT / 2}
+              stroke="#bdbdbd"
+              strokeWidth={0.5}
+            />
 
-        {/* Playhead */}
-        <Playhead
-          timeRef={currentTimeRef}
-          timeToX={timeToXForPlayhead}
-          height={WAVEFORM_HEIGHT}
-        />
+            {/* Playhead */}
+            <Playhead
+              timeRef={currentTimeRef}
+              timeToX={timeToXForPlayhead}
+              height={WAVEFORM_HEIGHT}
+            />
 
-        {/* Timeline */}
-        <Timeline
-          viewStart={viewStart}
-          viewEnd={viewEnd}
-          duration={duration}
-          width={containerWidth}
-          y={WAVEFORM_HEIGHT}
-          height={TIMELINE_HEIGHT}
-        />
-      </svg>
+            {/* Timeline */}
+            <Timeline
+              viewStart={viewStart}
+              viewEnd={viewEnd}
+              duration={duration}
+              width={containerWidth}
+              y={WAVEFORM_HEIGHT}
+              height={TIMELINE_HEIGHT}
+            />
+          </svg>
+        </div>
+      </Box>
 
-      {/* Handle overlays — always rendered so handles are grabbable even at full range */}
+      {/* Handle overlays — OUTSIDE scroll wrapper, positioned in containerRef */}
       <div style={{
           position: 'absolute',
           top: 0,
