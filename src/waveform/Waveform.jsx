@@ -415,17 +415,20 @@ const Waveform = React.memo(function Waveform({
         // Trackpad fires small deltas (1-10px); scale to fraction of view width
         applyPan(delta / 500);
       } else {
-        // No modifier — horizontal scroll pans waveform when zoomed
-        const vs = viewStartRef.current;
-        const ve = viewEndRef.current;
-        const dur = durationRef.current;
-        const isZoomed = vs > 0.001 || ve < dur - 0.001;
-        if (isZoomed && Math.abs(e.deltaX) > 1) {
+        // No modifier — horizontal scroll: always consume to prevent back-nav
+        // (handles are outside scrollRef, so overscrollBehaviorX doesn't protect them)
+        if (e.deltaX !== 0) {
           e.preventDefault();
-          startWheelGesture();
-          applyPan(e.deltaX / 500);
+          const vs = viewStartRef.current;
+          const ve = viewEndRef.current;
+          const dur = durationRef.current;
+          const isZoomed = vs > 0.001 || ve < dur - 0.001;
+          if (isZoomed) {
+            startWheelGesture();
+            applyPan(e.deltaX / 500);
+          }
         }
-        // Otherwise let page scroll naturally
+        // Vertical scroll passes through to page
       }
     };
 
