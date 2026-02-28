@@ -144,6 +144,33 @@ export function binomialPValue(k, n, p) {
   return Math.min(1, pValue);
 }
 
+// --- Response Timing ---
+
+/**
+ * Compute timing summary (median, fastest, slowest) from items with startedAt/finishedAt.
+ * @param {object[]} items - Array of { startedAt, finishedAt }
+ * @returns {{ median: number, fastest: number, slowest: number } | null} Times in seconds, or null if no timing data
+ */
+export function computeTimingStats(items) {
+  const durations = items
+    .filter((item) => item.startedAt != null && item.finishedAt != null)
+    .map((item) => (item.finishedAt - item.startedAt) / 1000);
+
+  if (durations.length === 0) return null;
+
+  durations.sort((a, b) => a - b);
+  const mid = Math.floor(durations.length / 2);
+  const median = durations.length % 2 === 0
+    ? (durations[mid - 1] + durations[mid]) / 2
+    : durations[mid];
+
+  return {
+    median,
+    fastest: durations[0],
+    slowest: durations[durations.length - 1],
+  };
+}
+
 // --- AB Test Statistics ---
 
 /**
@@ -178,7 +205,7 @@ export function computeAbStats(name, optionNames, userSelections) {
   // Sort by count descending
   options.sort((a, b) => b.count - a.count);
 
-  return { name, options, total, pValue };
+  return { name, options, total, pValue, timing: computeTimingStats(userSelections) };
 }
 
 // --- ABX Test Statistics ---
@@ -254,6 +281,7 @@ export function computeAbxStats(name, optionNames, userSelectionsAndCorrects) {
     total,
     pValue,
     confidenceBreakdown,
+    timing: computeTimingStats(userSelectionsAndCorrects),
   };
 }
 
@@ -318,6 +346,7 @@ export function computeTriangleStats(name, optionNames, userSelectionsAndCorrect
     total,
     pValue,
     confidenceBreakdown,
+    timing: computeTimingStats(userSelectionsAndCorrects),
   };
 }
 
@@ -437,6 +466,7 @@ export function computeSameDiffStats(name, optionNames, userSelectionsAndCorrect
     total,
     pValue,
     confidenceBreakdown,
+    timing: computeTimingStats(userSelectionsAndCorrects),
   };
 }
 
@@ -473,6 +503,7 @@ export function computeStaircaseStats(name, optionNames, staircaseData) {
       floorCeiling: null,
       interleaved: false,
       trials: [],
+      timing: null,
     };
   }
 
@@ -526,6 +557,7 @@ export function computeStaircaseStats(name, optionNames, staircaseData) {
     floorCeiling,
     interleaved,
     trials: allTrials,
+    timing: computeTimingStats(staircaseData.trials || []),
   };
 }
 

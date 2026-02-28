@@ -77,7 +77,8 @@ export default function Results({ description, results, config, precomputedStats
       else if (baseType === '2afc-staircase') sc.push(stats);
     }
 
-    // Staircase excluded from allStats for tag aggregation (measures JND, not preference/discrimination)
+    // Staircase included in allStats for share URL, but excluded from tag aggregation
+    // (measures JND, not preference/discrimination — can't be aggregated by tag)
     const allStats = [...ab, ...abx, ...abxy, ...tri, ...sd, ...sc];
     return {
       abStats: ab,

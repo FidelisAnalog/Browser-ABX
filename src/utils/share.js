@@ -39,6 +39,43 @@ function createMask(seed, len, maxInt) {
   return mask;
 }
 
+/** Share format version. Increment when encoding changes. */
+const SHARE_VERSION = 1;
+
+/**
+ * Encode timing stats as 6 bytes (3 x uint16, tenths of seconds).
+ * @param {object|null} timing - { median, fastest, slowest } in seconds
+ * @param {number[]} bytes - Target byte array
+ */
+function encodeTiming(timing, bytes) {
+  if (!timing) {
+    // No timing data — write zeros
+    for (let j = 0; j < 6; j++) bytes.push(0);
+    return;
+  }
+  for (const val of [timing.median, timing.fastest, timing.slowest]) {
+    const tenths = Math.round(val * 10);
+    const clamped = Math.min(65535, Math.max(0, tenths));
+    bytes.push((clamped >> 8) & 0xff); // high byte
+    bytes.push(clamped & 0xff);        // low byte
+  }
+}
+
+/**
+ * Decode 6 bytes into timing stats (3 x uint16, tenths of seconds).
+ * @param {number[]} bytes
+ * @param {number} offset
+ * @returns {{ median: number, fastest: number, slowest: number } | null}
+ */
+function decodeTiming(bytes, offset) {
+  const median = ((bytes[offset] << 8) | bytes[offset + 1]) / 10;
+  const fastest = ((bytes[offset + 2] << 8) | bytes[offset + 3]) / 10;
+  const slowest = ((bytes[offset + 4] << 8) | bytes[offset + 5]) / 10;
+  // All zeros means no timing data
+  if (median === 0 && fastest === 0 && slowest === 0) return null;
+  return { median, fastest, slowest };
+}
+
 /**
  * Decode 6 confidence breakdown bytes into breakdown array.
  * @param {number[]} bytes
@@ -82,10 +119,11 @@ export function encodeTestResults(allTestStats, config) {
   const optionNameToOrd = {};
   config.options.forEach((o, i) => (optionNameToOrd[o.name] = i));
 
-  // Build byte array
+  // Build byte array: [seed][version][test data...]
   const bytes = [];
   const seed = Math.floor(Math.random() * 256);
   bytes.push(seed);
+  bytes.push(SHARE_VERSION);
 
   // Build test type lookup by name
   const testTypeByName = {};
@@ -152,6 +190,9 @@ export function encodeTestResults(allTestStats, config) {
       bytes.push(byLevel.guessing?.correct ?? 0);
       bytes.push(byLevel.guessing?.total ?? 0);
     }
+
+    // Timing: 6 bytes (3 x uint16, tenths of seconds)
+    encodeTiming(stats.timing || null, bytes);
   }
 
   // Apply obfuscation mask (skip seed byte)
@@ -182,6 +223,12 @@ export function decodeTestResults(dataStr, config) {
     bytes[i] = (bytes[i] - mask[i - 1] + 256) & 0xff;
   }
 
+  // Version check
+  const version = bytes[1];
+  if (version !== SHARE_VERSION) {
+    throw new Error(`Unsupported share URL version (${version}). This link may have been created with a different version of the app.`);
+  }
+
   // Build reverse maps
   const testNames = config.tests.map((t) => t.name);
   const testTypeByName = {};
@@ -190,7 +237,7 @@ export function decodeTestResults(dataStr, config) {
   const optionNames = config.options.map((o) => o.name);
 
   const stats = [];
-  let i = 1;
+  let i = 2; // skip seed + version
 
   while (i < bytes.length) {
     const testOrd = bytes[i++];
@@ -240,6 +287,8 @@ export function decodeTestResults(dataStr, config) {
         i += 6;
       }
 
+      decoded.timing = decodeTiming(bytes, i);
+      i += 6;
       stats.push(decoded);
     } else if (typeEntry.shareEncoding === 'triangle') {
       // Triangle: decode correct/incorrect counts
@@ -264,6 +313,8 @@ export function decodeTestResults(dataStr, config) {
         i += 6;
       }
 
+      decoded.timing = decodeTiming(bytes, i);
+      i += 6;
       stats.push(decoded);
     } else if (typeEntry.shareEncoding === '2afc-sd') {
       // 2AFC-SD: decode signal detection counts and recompute stats
@@ -309,6 +360,8 @@ export function decodeTestResults(dataStr, config) {
         i += 6;
       }
 
+      decoded.timing = decodeTiming(bytes, i);
+      i += 6;
       stats.push(decoded);
     } else if (typeEntry.shareEncoding === '2afc-staircase') {
       // Staircase: decode reversal levels + totals + floor/ceiling + trial data
@@ -345,6 +398,9 @@ export function decodeTestResults(dataStr, config) {
         ? testOptionNames[jndLevel]
         : `Level ${jndLevel}`;
 
+      const timing = decodeTiming(bytes, i);
+      i += 6;
+
       stats.push({
         name: testName,
         _baseType: baseType,
@@ -361,6 +417,7 @@ export function decodeTestResults(dataStr, config) {
         floorCeiling,
         interleaved: false,
         trials,
+        timing,
       });
     } else if (typeEntry.shareEncoding === 'ab') {
       // AB: decode option counts
@@ -388,7 +445,10 @@ export function decodeTestResults(dataStr, config) {
       const chiSq = expected > 0 ? countArray.reduce((sum, obs) => sum + ((obs - expected) ** 2) / expected, 0) : 0;
       const pValue = total > 0 ? chiSquaredPValue(chiSq, options.length - 1) : 1;
 
-      stats.push({ name: testName, _baseType: baseType, options, total, pValue });
+      const timing = decodeTiming(bytes, i);
+      i += 6;
+
+      stats.push({ name: testName, _baseType: baseType, options, total, pValue, timing });
     }
   }
 

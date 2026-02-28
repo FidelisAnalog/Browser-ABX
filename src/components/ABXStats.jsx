@@ -134,6 +134,37 @@ export default function ABXStats({ stats, typeLabel = 'ABX' }) {
           </TableContainer>
         </Box>
       )}
+
+      {/* Response time */}
+      {stats.timing && (
+        <Box mt={1}>
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small" sx={{ tableLayout: 'fixed' }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 'bold', width: '50%' }}>
+                    <Box display="inline" mr={1}>Median</Box>
+                    <Tooltip title="Median response time per iteration. More robust than average — not skewed by outliers from pauses or distractions.">
+                      <Box display="inline">
+                        <Label color="primary">?</Label>
+                      </Box>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Fastest</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Slowest</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                <TableRow>
+                  <TableCell>{stats.timing.median.toFixed(1)}s</TableCell>
+                  <TableCell>{stats.timing.fastest.toFixed(1)}s</TableCell>
+                  <TableCell>{stats.timing.slowest.toFixed(1)}s</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
     </Box>
   );
 }
