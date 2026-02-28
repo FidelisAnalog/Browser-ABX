@@ -605,6 +605,8 @@ const Waveform = React.memo(function Waveform({
       if (dragActiveRef.current) return;
       if (!svgRef.current || duration <= 0) return;
       console.log('[scroll-diag] pointerdown type:', e.pointerType, 'target:', e.target.tagName);
+      const sr = scrollRef.current;
+      if (sr) console.log('[scroll-diag] scrollRef scrollWidth:', sr.scrollWidth, 'clientWidth:', sr.clientWidth, 'scrollLeft:', sr.scrollLeft);
       // Don't capture pointer for touch — let browser handle native scroll
       if (e.pointerType !== 'touch') {
         e.target.setPointerCapture(e.pointerId);
