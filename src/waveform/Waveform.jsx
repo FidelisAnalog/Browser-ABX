@@ -417,7 +417,7 @@ const Waveform = React.memo(function Waveform({
         const ve = viewEndRef.current;
         const dur = durationRef.current;
         const isZoomed = vs > 0.001 || ve < dur - 0.001;
-        if (isZoomed && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        if (isZoomed && Math.abs(e.deltaX) > 1) {
           e.preventDefault();
           startWheelGesture();
           applyPan(e.deltaX / 500);
@@ -552,17 +552,20 @@ const Waveform = React.memo(function Waveform({
     (e) => {
       if (dragActiveRef.current) return;
       if (!svgRef.current || duration <= 0) return;
-      cancelMomentum();
       e.target.setPointerCapture(e.pointerId);
       const rect = svgRef.current.getBoundingClientRect();
+      const isTouch = e.pointerType === 'touch';
+      if (isTouch) {
+        cancelMomentum();
+        momentumRef.current.samples = [];
+      }
       panDragRef.current = {
-        active: true,
+        active: isTouch,
         startX: e.clientX - rect.left,
         startViewStart: viewStartRef.current,
         startViewEnd: viewEndRef.current,
         moved: false,
       };
-      momentumRef.current.samples = [];
     },
     [duration, cancelMomentum]
   );
@@ -612,24 +615,25 @@ const Waveform = React.memo(function Waveform({
   const handleWaveformPointerUp = useCallback(
     (e) => {
       const pd = panDragRef.current;
-      if (!pd.active) return;
-      pd.active = false;
-      if (svgRef.current) svgRef.current.style.cursor = '';
-      if (pd.moved) {
+      if (pd.startX == null) return;
+
+      if (pd.active && pd.moved) {
+        // Touch drag completed — apply momentum
+        pd.active = false;
+        if (svgRef.current) svgRef.current.style.cursor = '';
         const m = momentumRef.current;
-        const velocity = m.velocity; // already computed during pointermove
+        const velocity = m.velocity;
 
         const VELOCITY_THRESHOLD = 0.1; // px/ms (~100 px/s)
         const FRICTION = 0.95;
         const STOP_VELOCITY = 0.0005; // px/ms
 
         if (Math.abs(velocity) > VELOCITY_THRESHOLD) {
-          // Start momentum with own position tracking (avoids React ref staleness)
           const dur = durationRef.current;
           const viewDur = viewEndRef.current - viewStartRef.current;
           const w = widthRef.current;
           let pos = viewStartRef.current;
-          let vel = velocity; // px/ms
+          let vel = velocity;
           let lastTime = performance.now();
 
           const tick = () => {
@@ -637,7 +641,7 @@ const Waveform = React.memo(function Waveform({
             const elapsed = nowMs - lastTime;
             lastTime = nowMs;
 
-            vel *= Math.pow(FRICTION, elapsed / 16.67); // normalize to 60fps
+            vel *= Math.pow(FRICTION, elapsed / 16.67);
 
             if (Math.abs(vel) < STOP_VELOCITY) {
               m.rafId = null;
@@ -652,11 +656,9 @@ const Waveform = React.memo(function Waveform({
               let newStart = pos + shift;
               let newEnd = newStart + viewDur;
 
-              // Clamp
               if (newStart < 0) { newStart = 0; newEnd = viewDur; }
               if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
 
-              // Stop if clamped at edge
               if (newStart === pos) {
                 m.rafId = null;
                 gestureActiveRef.current = false;
@@ -676,8 +678,9 @@ const Waveform = React.memo(function Waveform({
           gestureActiveRef.current = false;
           checkFollowEngage();
         }
-      } else {
-        // No movement — treat as click-to-seek
+      } else if (!pd.moved) {
+        // No movement — click-to-seek (any pointer type)
+        pd.active = false;
         if (!svgRef.current || duration <= 0) return;
         const rect = svgRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -687,7 +690,11 @@ const Waveform = React.memo(function Waveform({
         if (!isFullRange && (time < loopStart || time > loopEnd)) return;
         onSeek(time);
         followActiveRef.current = true;
+      } else {
+        pd.active = false;
       }
+
+      pd.startX = null;
     },
     [duration, onSeek, xToTime, checkFollowEngage, setUserView]
   );
@@ -796,6 +803,7 @@ const Waveform = React.memo(function Waveform({
         width: '100%',
         position: 'relative',
         userSelect: 'none',
+        overscrollBehaviorX: 'none',
         cursor: 'pointer',
         borderRadius: 1,
         border: '1px solid #e0e0e0',

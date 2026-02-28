@@ -9,7 +9,7 @@
  * - Click outside the viewport to recenter on that position
  */
 
-import React, { useMemo, useRef, useCallback, useEffect, useState, useId } from 'react';
+import React, { useMemo, useRef, useEffect, useState, useId } from 'react';
 import { Box } from '@mui/material';
 import { downsampleRange } from './generateWaveform';
 
@@ -151,7 +151,7 @@ const OverviewBar = React.memo(function OverviewBar({
     } else if (x >= vpLeft && x <= vpRight) {
       draggingRef.current = 'pan';
     } else {
-      // Click outside viewport — recenter
+      // Click/tap outside viewport — recenter
       const clickTime = xToTime(x);
       const viewDur = viewEnd - viewStart;
       let newStart = clickTime - viewDur / 2;
@@ -230,6 +230,7 @@ const OverviewBar = React.memo(function OverviewBar({
     if (onGestureEnd) onGestureEnd();
     updateCursor(e);
   };
+
 
   return (
     <Box
