@@ -55,7 +55,8 @@ export default function TestRunner({ configUrl }) {
   // Per-iteration type-specific state (populated by setupIteration, read during render).
   // Shape varies by test type — see setupIteration for each type's structure.
   const iterationStateRef = useRef({});
-  const [iterationVersion, setIterationVersion] = useState(0);
+  // Re-render trigger for iteration state changes (ref updates don't cause re-renders)
+  const [, setIterationVersion] = useState(0);
 
   // Per-test persistent state (e.g. 2AFC-SD trial sequence, staircase state)
   const testStateRef = useRef({});
@@ -75,6 +76,9 @@ export default function TestRunner({ configUrl }) {
   // Adaptive test state — persists across trials within a test.
   // For staircase: holds the staircase state or interleaved state object.
   const adaptiveStateRef = useRef(null);
+
+  // Staircase familiarization phase — true before first real trial
+  const familiarizingRef = useRef(false);
 
   // Iteration timing
   const iterationStartRef = useRef(null);
@@ -340,27 +344,45 @@ export default function TestRunner({ configUrl }) {
         } else {
           adaptiveStateRef.current = createStaircaseState(sc);
         }
+        familiarizingRef.current = true;
       }
 
-      // Get current level from the adaptive state
-      let level;
-      let trackIdx = null;
-      const state = adaptiveStateRef.current;
-      if (test.staircase.interleave) {
-        trackIdx = pickInterleavedTrack(state);
-        level = getCurrentLevel(state.tracks[trackIdx]);
+      if (familiarizingRef.current) {
+        // Familiarization: reference at A, starting level at B (no randomization)
+        const reference = ordered[0];
+        const startLevel = test.staircase.nLevels; // Most different
+        const testStim = ordered[startLevel];
+        const pair = [{ ...reference }, { ...testStim }];
+        iterationStateRef.current = {
+          pair,
+          referenceIdx: 0,
+          testLevel: startLevel,
+          interleavedTrackIdx: null,
+          familiarizing: true,
+          pairNames: [reference.name, testStim.name],
+        };
+        bufferSources = pair;
       } else {
-        level = getCurrentLevel(state);
-      }
+        // Get current level from the adaptive state
+        let level;
+        let trackIdx = null;
+        const state = adaptiveStateRef.current;
+        if (test.staircase.interleave) {
+          trackIdx = pickInterleavedTrack(state);
+          level = getCurrentLevel(state.tracks[trackIdx]);
+        } else {
+          level = getCurrentLevel(state);
+        }
 
-      const { pair, referenceIdx } = buildStaircasePair(ordered, level);
-      iterationStateRef.current = {
-        pair,
-        referenceIdx,
-        testLevel: level,
-        interleavedTrackIdx: trackIdx,
-      };
-      bufferSources = pair;
+        const { pair, referenceIdx } = buildStaircasePair(ordered, level);
+        iterationStateRef.current = {
+          pair,
+          referenceIdx,
+          testLevel: level,
+          interleavedTrackIdx: trackIdx,
+        };
+        bufferSources = pair;
+      }
     } else {
       // AB: options are the buffers
       iterationStateRef.current = {};
@@ -388,6 +410,7 @@ export default function TestRunner({ configUrl }) {
     setTestStep(0);
     setRepeatStep(0);
     adaptiveStateRef.current = null;
+    familiarizingRef.current = false;
     // Reset results and update optionNames to shuffled order for first test
     const freshResults = config.tests.map((test) => {
       const { entry } = getTestType(test.testType);
@@ -451,10 +474,19 @@ export default function TestRunner({ configUrl }) {
 
   // Handle staircase test submission
   const handleStaircaseSubmit = (selectedIdx) => {
+    const test = config.tests[testStep];
+
+    // Familiarization complete — transition to first real trial
+    if (familiarizingRef.current) {
+      familiarizingRef.current = false;
+      const iterationData = setupIteration(test, testStep, false);
+      loadIterationAudio(iterationData);
+      return;
+    }
+
     const now = Date.now();
     const { referenceIdx, testLevel, interleavedTrackIdx } = iterationStateRef.current;
     const isCorrect = selectedIdx === referenceIdx;
-    const test = config.tests[testStep];
 
     // Update adaptive state
     const state = adaptiveStateRef.current;
@@ -527,6 +559,7 @@ export default function TestRunner({ configUrl }) {
       setTestStep(nextTest);
       setRepeatStep(0);
       adaptiveStateRef.current = null;
+      familiarizingRef.current = false;
       const iterationData = setupIteration(config.tests[nextTest], nextTest, true);
       loadIterationAudio(iterationData);
     } else {
@@ -609,11 +642,10 @@ export default function TestRunner({ configUrl }) {
     : entry.submitType === 'ab' ? handleAbSubmit
     : handleAbxSubmit;
 
-  // Common props shared by all test types.
-  // Adaptive types remount every trial (pair changes); fixed types remount per test only.
-  const componentKey = entry.isAdaptive ? `${testStep}-${iterationVersion}` : testStep;
+  // Common props shared by all test types. Remount only on test change, not per trial.
+  // Per-trial state resets are handled by each component's own useEffect dependencies.
   const commonProps = {
-    key: componentKey,
+    key: testStep,
     name: test.name,
     description: test.description,
     stepStr,
@@ -669,21 +701,35 @@ export default function TestRunner({ configUrl }) {
   } else if (baseType === '2afc-staircase') {
     const state = adaptiveStateRef.current;
     const sc = test.staircase;
-    typeProps = {
-      pair: iterState.pair,
-      referenceIdx: iterState.referenceIdx,
-      testLevel: iterState.testLevel,
-      reversalCount: sc.interleave
-        ? state.tracks.reduce((sum, t) => sum + t.reversals.length, 0)
-        : state.reversals.length,
-      targetReversals: sc.interleave
-        ? sc.reversals * 2  // 2 tracks
-        : sc.reversals,
-      trialHistory: results[testStep].staircaseData?.trials || [],
-      minRemaining: sc.interleave
-        ? minInterleavedRemainingTrials(state)
-        : minRemainingTrials(state),
-    };
+    if (iterState.familiarizing) {
+      typeProps = {
+        pair: iterState.pair,
+        referenceIdx: iterState.referenceIdx,
+        testLevel: iterState.testLevel,
+        familiarizing: true,
+        pairNames: iterState.pairNames,
+        reversalCount: 0,
+        targetReversals: sc.interleave ? sc.reversals * 2 : sc.reversals,
+        trialHistory: [],
+        minRemaining: 0,
+      };
+    } else {
+      typeProps = {
+        pair: iterState.pair,
+        referenceIdx: iterState.referenceIdx,
+        testLevel: iterState.testLevel,
+        reversalCount: sc.interleave
+          ? state.tracks.reduce((sum, t) => sum + t.reversals.length, 0)
+          : state.reversals.length,
+        targetReversals: sc.interleave
+          ? sc.reversals * 2  // 2 tracks
+          : sc.reversals,
+        trialHistory: results[testStep].staircaseData?.trials || [],
+        minRemaining: sc.interleave
+          ? minInterleavedRemainingTrials(state)
+          : minRemainingTrials(state),
+      };
+    }
   }
 
   return <TestComponent {...commonProps} {...typeProps} />;

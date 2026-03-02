@@ -26,6 +26,8 @@ import { useHotkeys } from '../audio/useHotkeys';
  * @param {number} props.targetReversals - Target reversal count
  * @param {object[]} props.trialHistory - Array of { isCorrect } for progress bar
  * @param {number} [props.minRemaining=1] - Best-case minimum remaining trials (from staircase algorithm)
+ * @param {boolean} [props.familiarizing=false] - True during free-listen familiarization phase
+ * @param {string[]} [props.pairNames] - Option names for A and B during familiarization
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform
  * @param {boolean} props.crossfadeForced
@@ -42,6 +44,8 @@ export default function StaircaseTest({
   targetReversals,
   trialHistory = [],
   minRemaining = 1,
+  familiarizing = false,
+  pairNames,
   engine,
   channelData,
   crossfadeForced,
@@ -64,12 +68,12 @@ export default function StaircaseTest({
     return String.fromCharCode(65 + answer);
   };
 
-  const canSubmit = answer !== null;
+  const canSubmit = familiarizing || answer !== null;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
     engine?.stop();
-    onSubmit(answer);
+    onSubmit(familiarizing ? null : answer);
   };
 
   useHotkeys({ engine, trackCount, onTrackSelect: handleTrackSelect, onSubmit: handleSubmit });
@@ -85,7 +89,13 @@ export default function StaircaseTest({
                 <Typography variant="h5" textAlign="center">
                   {name}
                 </Typography>
-                {description && (
+                {familiarizing ? (
+                  <Box mt={2}>
+                    <Typography textAlign="center" color="text.secondary">
+                      Listen freely to both tracks, then press Start
+                    </Typography>
+                  </Box>
+                ) : description && (
                   <Box mt={2}>
                     <Typography textAlign="center">{description}</Typography>
                   </Box>
@@ -95,12 +105,14 @@ export default function StaircaseTest({
               <Divider />
 
               {/* Progress info: reversals on left, trial on right */}
-              <Box display="flex" justifyContent="space-between" mt={0.5} mx={1}>
-                <Typography color="text.secondary" variant="body2">
-                  Reversals: {reversalCount}/{targetReversals}
-                </Typography>
-                <Typography color="text.secondary">{stepStr}</Typography>
-              </Box>
+              {!familiarizing && (
+                <Box display="flex" justifyContent="space-between" mt={0.5} mx={1}>
+                  <Typography color="text.secondary" variant="body2">
+                    Reversals: {reversalCount}/{targetReversals}
+                  </Typography>
+                  <Typography color="text.secondary">{stepStr}</Typography>
+                </Box>
+              )}
 
               {/* Track selector — 2 buttons */}
               <TrackSelector
@@ -109,6 +121,18 @@ export default function StaircaseTest({
                 onSelect={handleTrackSelect}
                 xTrackIndex={null}
               />
+
+              {/* Option name labels below buttons during familiarization */}
+              {familiarizing && pairNames && (
+                <Box display="flex" justifyContent="space-between" mx={4}>
+                  <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ flex: 1, fontWeight: 'bold' }}>
+                    {pairNames[0]}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ flex: 1, fontWeight: 'bold' }}>
+                    {pairNames[1]}
+                  </Typography>
+                </Box>
+              )}
 
               {/* Submit */}
               <Box display="flex" justifyContent="flex-end" mt={2}>
@@ -119,31 +143,33 @@ export default function StaircaseTest({
                   disabled={!canSubmit}
                   sx={{ textTransform: 'none' }}
                 >
-                  {getAnswerLabel()} is the reference
+                  {familiarizing ? 'Start Test' : `${getAnswerLabel()} is the reference`}
                 </Button>
               </Box>
             </Box>
 
             {/* Progress bar: min 7 slots, grey slots = best-case remaining, grows dynamically */}
-            <Box
-              display="flex"
-              gap="3px"
-              sx={{ px: 2.5, pb: 1.5 }}
-            >
-              {Array.from({ length: Math.max(7, trialHistory.length + Math.max(1, minRemaining)) }, (_, i) => (
-                <Box
-                  key={i}
-                  sx={{
-                    flex: 1,
-                    height: 6,
-                    borderRadius: 1,
-                    backgroundColor: i < trialHistory.length
-                      ? (trialHistory[i].isCorrect ? '#66bb6a' : '#ef5350')
-                      : '#e0e0e0',
-                  }}
-                />
-              ))}
-            </Box>
+            {!familiarizing && (
+              <Box
+                display="flex"
+                gap="3px"
+                sx={{ px: 2.5, pb: 1.5 }}
+              >
+                {Array.from({ length: Math.max(7, trialHistory.length + Math.max(1, minRemaining)) }, (_, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      flex: 1,
+                      height: 6,
+                      borderRadius: 1,
+                      backgroundColor: i < trialHistory.length
+                        ? (trialHistory[i].isCorrect ? '#66bb6a' : '#ef5350')
+                        : '#e0e0e0',
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
           </Paper>
 
           {/* Audio controls */}
