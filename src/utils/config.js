@@ -98,9 +98,9 @@ function normalizeStaircaseConfig(test, nOptions) {
   }
 
   const startLevel = sc.startLevel ?? STAIRCASE_DEFAULTS.startLevel;
-  if (startLevel != null && (startLevel < 1 || startLevel > nOptions)) {
+  if (startLevel != null && (startLevel < 1 || startLevel > nOptions - 1)) {
     throw new Error(
-      `Test "${test.name}" has staircase startLevel: ${startLevel}. Must be 1-${nOptions}.`
+      `Test "${test.name}" has staircase startLevel: ${startLevel}. Must be 1-${nOptions - 1}.`
     );
   }
 

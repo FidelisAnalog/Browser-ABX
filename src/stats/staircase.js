@@ -24,7 +24,7 @@ export const STAIRCASE_DEFAULTS = {
   initialStep: 2,
   finalStep: 1,
   stepReductionAfter: 2,
-  startLevel: null, // null = auto (middle of options)
+  startLevel: null, // null = auto (nLevels = most different)
   interleave: false,
 };
 
@@ -57,7 +57,7 @@ export function createStaircaseState(config) {
   const correctsNeeded = parseRule(config.rule);
   const startLevel = config.startLevel != null
     ? config.startLevel
-    : Math.ceil(nLevels / 2); // Auto: middle
+    : nLevels; // Auto: start at most different (farthest from reference)
 
   return {
     // Config (immutable after init)
@@ -70,7 +70,7 @@ export function createStaircaseState(config) {
     stepReductionAfter: config.stepReductionAfter,
 
     // Mutable state
-    level: startLevel,          // Current level (1-based: 1=easiest/best, nLevels=hardest/worst)
+    level: startLevel,          // Current level (1-based: 1=closest to reference, nLevels=most different)
     direction: null,            // 'up' | 'down' | null (no direction yet)
     consecutiveCorrect: 0,      // Streak counter for transformed rules
     reversals: [],              // Array of level values at each reversal
@@ -80,8 +80,8 @@ export function createStaircaseState(config) {
 }
 
 /**
- * Get the current level (1-based index into options array).
- * Level 1 = reference / best quality, Level N = worst quality / hardest.
+ * Get the current level (1-based index into non-reference options).
+ * Level 1 = closest to reference (hardest to detect), Level N = most different (easiest).
  * @param {object} state - Staircase state
  * @returns {number} Current level (1-based)
  */

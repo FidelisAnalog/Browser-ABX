@@ -25,7 +25,13 @@ function interpretStaircase(stats) {
   if (stats.jndSD > stats.jnd * 0.5 && stats.jnd > 1) {
     return 'High variability in reversal levels. The JND estimate may be unreliable — consider more reversals.';
   }
-  return `JND estimated at level ${stats.jndLevel} (${stats.jndOptionName}). The listener can reliably detect differences at or below this level.`;
+  if (stats.jndLevel <= 1) {
+    return `JND at level ${stats.jndLevel} (${stats.jndOptionName}) — excellent discrimination, near the finest level.`;
+  }
+  if (stats.jndLevel >= stats.optionNames.length - 2) {
+    return `JND at level ${stats.jndLevel} (${stats.jndOptionName}) — poor discrimination, near the coarsest level.`;
+  }
+  return `JND estimated at level ${stats.jndLevel} (${stats.jndOptionName}). The listener can detect differences at this level and above.`;
 }
 
 /**
@@ -46,7 +52,7 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
   const plotH = height - padding.top - padding.bottom;
 
   const xScale = (i) => padding.left + (i / Math.max(trials.length - 1, 1)) * plotW;
-  const yScale = (level) => padding.top + ((level - 1) / Math.max(nLevels - 1, 1)) * plotH;
+  const yScale = (level) => padding.top + ((nLevels - level) / Math.max(nLevels - 1, 1)) * plotH;
 
   // Build polyline path
   const points = trials.map((t, i) => `${xScale(i)},${yScale(t.level)}`).join(' ');
@@ -201,7 +207,7 @@ export default function StaircaseStats({ stats }) {
       {stats.optionNames && (
         <Box mb={1}>
           <Typography variant="body2" color="text.secondary">
-            {stats.optionNames.length} levels: {stats.optionNames[0]} → {stats.optionNames[stats.optionNames.length - 1]}
+            {stats.optionNames.length - 1} levels: {stats.optionNames[1]} → {stats.optionNames[stats.optionNames.length - 1]}
           </Typography>
         </Box>
       )}
