@@ -17,6 +17,8 @@ import { loadAndValidate, createAudioBufferMap } from '../audio/audioLoader';
 import { AudioEngine } from '../audio/audioEngine';
 import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
+import { createShareUrl } from '../utils/share';
+import { emitEvent } from '../utils/events';
 import {
   createStaircaseState, createInterleavedState, getCurrentLevel,
   recordResponse, pickInterleavedTrack, recordInterleavedResponse,
@@ -28,9 +30,13 @@ import SampleRateInfo from './SampleRateInfo';
 
 /**
  * @param {object} props
- * @param {string} props.configUrl - URL to YAML config
+ * @param {string} [props.configUrl] - URL to YAML config (standalone mode)
+ * @param {object} [props.config] - Pre-parsed config object (embed mode, already normalized)
+ * @param {boolean} [props.postResults] - Include results in dbt:completed event (default: true)
+ * @param {boolean} [props.skipWelcome] - Skip welcome screen, auto-start when audio ready
+ * @param {boolean} [props.skipResults] - Skip results screen, show minimal completion state
  */
-export default function TestRunner({ configUrl }) {
+export default function TestRunner({ configUrl, config: configProp, postResults = true, skipWelcome = false, skipResults = false }) {
   const [config, setConfig] = useState(null);
   const [configError, setConfigError] = useState(null);
 
@@ -118,31 +124,45 @@ export default function TestRunner({ configUrl }) {
     }
   }, [engine, currentTest]);
 
-  // Load config
+  // Track whether dbt:completed has been emitted (prevent duplicates on re-render)
+  const completedEmittedRef = useRef(false);
+
+  /** Initialize results array from a config object. */
+  const initResults = useCallback((cfg) => {
+    setConfig(cfg);
+    setResults(
+      cfg.tests.map((test) => {
+        const { entry } = getTestType(test.testType);
+        return {
+          name: test.name,
+          testType: test.testType,
+          optionNames: null,
+          nOptions: test.options.length,
+          [entry.resultDataKey]: [],
+        };
+      })
+    );
+  }, []);
+
+  // Load config — from prop (embed mode) or URL (standalone mode)
   useEffect(() => {
+    if (configProp) {
+      // Embed mode: config already normalized by App.jsx
+      initResults(configProp);
+      return;
+    }
+    if (!configUrl) return;
     let cancelled = false;
     parseConfig(configUrl)
       .then((cfg) => {
         if (cancelled) return;
-        setConfig(cfg);
-        setResults(
-          cfg.tests.map((test) => {
-            const { entry } = getTestType(test.testType);
-            return {
-              name: test.name,
-              testType: test.testType,
-              optionNames: null,
-              nOptions: test.options.length,
-              [entry.resultDataKey]: [],
-            };
-          })
-        );
+        initResults(cfg);
       })
       .catch((err) => {
         if (!cancelled) setConfigError(err.message);
       });
     return () => { cancelled = true; };
-  }, [configUrl]);
+  }, [configUrl, configProp, initResults]);
 
   // Collect all unique audio URLs from config
   const audioUrls = useMemo(() => {
@@ -160,7 +180,10 @@ export default function TestRunner({ configUrl }) {
     const controller = new AbortController();
 
     loadAndValidate(audioUrls, (loaded, total) => {
-      if (!controller.signal.aborted) setLoadProgress({ loaded, total });
+      if (!controller.signal.aborted) {
+        setLoadProgress({ loaded, total });
+        emitEvent('dbt:loading', { loaded, total });
+      }
     }, { signal: controller.signal })
       .then((data) => {
         if (controller.signal.aborted) return;
@@ -394,19 +417,28 @@ export default function TestRunner({ configUrl }) {
     return { options: ordered, bufferSources };
   }, [generateTrialSequence, buildStaircasePair]);
 
-  // Start test (from welcome screen)
+  // Start test (from welcome screen or auto-start when skipWelcome)
   const handleStart = useCallback((formData) => {
     setForm(formData);
     setTestStep(0);
     setRepeatStep(0);
+    emitEvent('dbt:started', { form: formData });
     if (config.tests.length > 0) {
       const iterationData = setupIteration(config.tests[0], 0, true);
       loadIterationAudio(iterationData);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
+  // skipWelcome: auto-start when audio is ready
+  useEffect(() => {
+    if (skipWelcome && audioInitialized && testStep === -1 && config) {
+      handleStart({});
+    }
+  }, [skipWelcome, audioInitialized, testStep, config, handleStart]);
+
   // Restart test (from results screen) — reuses cached audio
   const handleRestart = useCallback(() => {
+    completedEmittedRef.current = false;
     setTestStep(0);
     setRepeatStep(0);
     adaptiveStateRef.current = null;
@@ -539,6 +571,15 @@ export default function TestRunner({ configUrl }) {
     const test = config.tests[testStep];
     const { entry } = getTestType(test.testType);
 
+    // Emit progress event — trial just completed
+    emitEvent('dbt:progress', {
+      testIndex: testStep,
+      testName: test.name,
+      trialIndex: repeatStep,
+      totalTests: config.tests.length,
+      totalTrials: entry.isAdaptive ? null : test.repeat,
+    });
+
     // Determine if we should continue this test
     let continueTest;
     if (entry.isAdaptive) {
@@ -568,6 +609,24 @@ export default function TestRunner({ configUrl }) {
     }
   };
 
+  // Emit dbt:completed when all tests are done
+  useEffect(() => {
+    if (!config || testStep < config.tests.length || completedEmittedRef.current) return;
+    completedEmittedRef.current = true;
+
+    if (postResults) {
+      const allStats = results.map((result) => {
+        const { entry } = getTestType(result.testType);
+        const resultData = result[entry.resultDataKey];
+        return entry.computeStats(result.name, result.optionNames, resultData);
+      });
+      const shareUrl = createShareUrl(allStats, config);
+      emitEvent('dbt:completed', { results, stats: allStats, shareUrl, form });
+    } else {
+      emitEvent('dbt:completed');
+    }
+  }, [config, testStep, postResults, results, form]);
+
   // --- Render ---
 
   if (configError) {
@@ -589,8 +648,20 @@ export default function TestRunner({ configUrl }) {
     );
   }
 
-  // Welcome screen
+  // Welcome screen (or loading indicator when skipWelcome)
   if (testStep === -1) {
+    if (skipWelcome) {
+      return (
+        <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" minHeight="100vh" gap={2}>
+          <CircularProgress />
+          {loadProgress.total > 0 && (
+            <Typography variant="body2" color="text.secondary">
+              Loading audio ({loadProgress.loaded}/{loadProgress.total})
+            </Typography>
+          )}
+        </Box>
+      );
+    }
     return (
       <>
         {engine && (
@@ -610,6 +681,13 @@ export default function TestRunner({ configUrl }) {
 
   // Results screen
   if (testStep >= config.tests.length) {
+    if (skipResults) {
+      return (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+          <Typography variant="h6" color="text.secondary">Test complete</Typography>
+        </Box>
+      );
+    }
     return (
       <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
         <Container maxWidth="md">

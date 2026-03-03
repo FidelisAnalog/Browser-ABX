@@ -124,7 +124,7 @@ function normalizeStaircaseConfig(test, nOptions) {
  * @param {object} raw - Raw parsed YAML
  * @returns {object} Normalized config
  */
-function normalizeConfig(raw) {
+export function normalizeConfig(raw) {
   if (!raw.name) throw new Error('Config must have a "name" field');
   if (!raw.options || raw.options.length === 0) throw new Error('Config must have "options"');
   if (!raw.tests || raw.tests.length === 0) throw new Error('Config must have "tests"');

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Embed Integration Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+    h1 { font-size: 1.4rem; padding: 12px 20px; background: #1976d2; color: #fff; }
+
+    .page { display: flex; flex-direction: column; height: 100vh; }
+
+    /* Config textarea */
+    .config-section { padding: 12px 16px 0; }
+    .config-section textarea { width: 100%; height: 100px; border: 1px solid #ddd; border-radius: 4px; padding: 8px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; line-height: 1.4; resize: vertical; outline: none; }
+    .config-section textarea:focus { border-color: #1976d2; }
+
+    /* Controls row */
+    .controls-row { display: flex; align-items: center; gap: 16px; padding: 8px 16px; }
+    .checkboxes { display: flex; gap: 16px; }
+    .checkboxes label { font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    .btn { padding: 6px 20px; background: #1976d2; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
+    .btn:hover { background: #1565c0; }
+
+    /* Iframe */
+    .iframe-section { flex: 1; position: relative; margin: 0 16px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: #fff; }
+    .iframe-section iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
+    .iframe-section .placeholder { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #999; }
+
+    /* Event log */
+    .log-section { margin: 8px 16px 12px; }
+    .log-header { font-weight: 600; font-size: 0.8rem; color: #555; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+    .log-header button { background: none; border: 1px solid #ddd; border-radius: 3px; padding: 1px 8px; cursor: pointer; font-size: 0.75rem; color: #666; }
+    .log-header button:hover { background: #f5f5f5; }
+    .log { overflow-y: auto; max-height: 140px; border: 1px solid #ddd; border-radius: 4px; padding: 6px 8px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10.5px; line-height: 1.5; background: #fff; }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid #f5f5f5; }
+    .log-time { color: #999; margin-right: 4px; }
+    .log-type { font-weight: 600; }
+    .log-type.ready { color: #4caf50; }
+    .log-type.loading { color: #ff9800; }
+    .log-type.started { color: #2196f3; }
+    .log-type.progress { color: #9c27b0; }
+    .log-type.completed { color: #4caf50; }
+    .log-type.error { color: #f44336; }
+    .log-data { color: #666; margin-left: 4px; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Embed Integration Test</h1>
+
+    <!-- Config JSON -->
+    <div class="config-section">
+      <textarea id="configInput" spellcheck="false">{
+  "name": "Embed Demo Test",
+  "welcome": {
+    "description": "## Embedded Listening Test\n\nThis test is running inside an iframe, receiving its config via postMessage.\n\nFiles are ~60MB total — may take a moment to download."
+  },
+  "options": [
+    {
+      "name": "Lyra Kleos",
+      "audioUrl": "https://www.dropbox.com/scl/fi/upg6mxle1pyr3v7teyy37/NJ_A.flac?rlkey=oh146qbh4m1i48sq9m2tacnpr&dl=0"
+    },
+    {
+      "name": "Ortofon 2M Blue",
+      "audioUrl": "https://www.dropbox.com/scl/fi/aaan3dnn7jkznxxk7gkl7/NJ_B.flac?rlkey=gcmbvtu84hfydqxlycmty3mvo&dl=0"
+    }
+  ],
+  "tests": [
+    {
+      "name": "ABX Test Demo",
+      "testType": "ABX",
+      "description": "Select the option which is the same as X",
+      "showProgress": true,
+      "crossfade": true,
+      "options": ["Lyra Kleos", "Ortofon 2M Blue"],
+      "repeat": 3
+    }
+  ]
+}</textarea>
+    </div>
+
+    <!-- Options + Send button -->
+    <div class="controls-row">
+      <div class="checkboxes">
+        <label><input type="checkbox" id="postResults" checked> postResults</label>
+        <label><input type="checkbox" id="skipWelcome"> skipWelcome</label>
+        <label><input type="checkbox" id="skipResults"> skipResults</label>
+      </div>
+      <button class="btn" onclick="launchTest()">Send Config</button>
+    </div>
+
+    <!-- Iframe -->
+    <div class="iframe-section" id="iframeContainer">
+      <div class="placeholder">Click "Send Config" to start</div>
+    </div>
+
+    <!-- Event log -->
+    <div class="log-section">
+      <div class="log-header">
+        <span>Event Log</span>
+        <button onclick="clearLog()">Clear</button>
+      </div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    let iframe = null;
+
+    // Listen for postMessage events from the iframe
+    window.addEventListener('message', (e) => {
+      const data = e.data;
+      if (!data || typeof data.type !== 'string' || !data.type.startsWith('dbt:')) return;
+      logEvent(data);
+    });
+
+    function launchTest() {
+      let config;
+      try {
+        config = JSON.parse(document.getElementById('configInput').value);
+      } catch (err) {
+        logEvent({ type: 'dbt:error', error: 'Invalid JSON: ' + err.message });
+        return;
+      }
+
+      const options = {
+        postResults: document.getElementById('postResults').checked,
+        skipWelcome: document.getElementById('skipWelcome').checked,
+        skipResults: document.getElementById('skipResults').checked,
+      };
+
+      const container = document.getElementById('iframeContainer');
+      if (iframe) {
+        iframe.remove();
+      }
+      const placeholder = container.querySelector('.placeholder');
+      if (placeholder) placeholder.remove();
+
+      iframe = document.createElement('iframe');
+      iframe.src = 'https://code.myhi.fi/Browser-ABX/';
+      container.appendChild(iframe);
+
+      const readyHandler = (e) => {
+        if (e.data?.type === 'dbt:ready') {
+          window.removeEventListener('message', readyHandler);
+          iframe.contentWindow.postMessage({
+            type: 'dbt:config',
+            config: config,
+            options: options,
+          }, '*');
+          logEvent({ type: 'parent:sent', message: 'Config sent to iframe', options });
+        }
+      };
+      window.addEventListener('message', readyHandler);
+
+      logEvent({ type: 'parent:info', message: 'Iframe created, waiting for dbt:ready...' });
+    }
+
+    function logEvent(data) {
+      const log = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 1 });
+      const typeClass = data.type.replace('dbt:', '').replace('parent:', '');
+
+      const payload = { ...data };
+      delete payload.type;
+      const payloadStr = Object.keys(payload).length > 0
+        ? JSON.stringify(payload, null, 0)
+        : '';
+
+      const displayPayload = payloadStr.length > 200
+        ? payloadStr.substring(0, 200) + '...'
+        : payloadStr;
+
+      entry.innerHTML = `<span class="log-time">${time}</span>`
+        + `<span class="log-type ${typeClass}">${data.type}</span>`
+        + (displayPayload ? `<span class="log-data">${escapeHtml(displayPayload)}</span>` : '');
+
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+
+      if (data.type === 'dbt:completed' && data.results) {
+        const detail = document.createElement('div');
+        detail.className = 'log-entry';
+        detail.innerHTML = `<span class="log-time">${time}</span>`
+          + `<span class="log-type completed">results</span>`
+          + `<span class="log-data">${escapeHtml(JSON.stringify(data.results, null, 2).substring(0, 1000))}</span>`;
+        log.appendChild(detail);
+
+        if (data.stats) {
+          const statEntry = document.createElement('div');
+          statEntry.className = 'log-entry';
+          statEntry.innerHTML = `<span class="log-time">${time}</span>`
+            + `<span class="log-type completed">stats</span>`
+            + `<span class="log-data">${escapeHtml(JSON.stringify(data.stats, null, 2).substring(0, 1000))}</span>`;
+          log.appendChild(statEntry);
+        }
+
+        if (data.shareUrl) {
+          const urlEntry = document.createElement('div');
+          urlEntry.className = 'log-entry';
+          urlEntry.innerHTML = `<span class="log-time">${time}</span>`
+            + `<span class="log-type completed">shareUrl</span>`
+            + `<span class="log-data">${escapeHtml(data.shareUrl)}</span>`;
+          log.appendChild(urlEntry);
+        }
+
+        log.scrollTop = log.scrollHeight;
+      }
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
