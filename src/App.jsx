@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Box, CircularProgress, ThemeProvider, Typography, createTheme, CssBaseline } from '@mui/material';
+import { Box, CircularProgress, Link, ThemeProvider, Typography, createTheme, CssBaseline } from '@mui/material';
 import TestRunner from './components/TestRunner';
 import SharedResults from './components/SharedResults';
 import LandingPage from './components/LandingPage';
@@ -194,6 +194,16 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       {content}
+      {isEmbedded && (
+        <Box textAlign="center" mt={-2} pb={0.5}>
+          <Typography variant="caption" color="text.secondary">
+            powered by{' '}
+            <Link href="https://acidtest.io" target="_blank" rel="noopener" color="inherit" underline="hover">
+              acidtest.io
+            </Link>
+          </Typography>
+        </Box>
+      )}
     </ThemeProvider>
   );
 }
