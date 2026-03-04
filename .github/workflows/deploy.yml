@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, test]
+    branches: [main, test, preview]
   workflow_dispatch:
 
 permissions:
@@ -56,6 +56,31 @@ jobs:
       - name: Move test build into dist/test/
         if: steps.check-test.outputs.exists == 'true'
         run: mv test-branch/dist dist/test
+
+      # Build preview branch → dist/preview/ (skip if branch doesn't exist)
+      - name: Check for preview branch
+        id: check-preview
+        run: |
+          if git ls-remote --heads origin preview | grep -q preview; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout preview branch
+        if: steps.check-preview.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: preview
+          path: preview-branch
+
+      - name: Build preview branch
+        if: steps.check-preview.outputs.exists == 'true'
+        run: cd preview-branch && npm ci && npm run build && npm test
+
+      - name: Move preview build into dist/preview/
+        if: steps.check-preview.outputs.exists == 'true'
+        run: mv preview-branch/dist dist/preview
 
       - uses: actions/upload-pages-artifact@v3
         with:
