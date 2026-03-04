@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Box, Button, Container, Divider, Paper, Typography } from '@mui/material';
+import { Box, Button, Container, Divider, Paper, Typography, useTheme } from '@mui/material';
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
@@ -49,6 +49,7 @@ export default function ABXTest({
   const trackCount = options.length + 1; // options + X
   const xTrackIndex = trackCount - 1;    // X is always last
 
+  const theme = useTheme();
   const selectedTrack = useSelectedTrack(engine);
 
   // The user's answer: which non-X option they think X matches
@@ -97,7 +98,7 @@ export default function ABXTest({
   useHotkeys({ engine, trackCount, xTrackIndex, onTrackSelect: handleTrackSelect, onSubmit: handleSubmitClick });
 
   return (
-    <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
+    <Box sx={{ minHeight: '100vh' }} pt={2} pb={2}>
       <Container maxWidth="md">
         <Box display="flex" flexDirection="column" gap={1.5}>
           {/* Test info */}
@@ -190,20 +191,20 @@ export default function ABXTest({
                 sx={{ px: 2.5, pb: 1.5 }}
               >
                 {Array.from({ length: totalIterations }, (_, i) => {
-                  let color = '#e0e0e0'; // grey — not yet attempted
+                  let color = theme.palette.progress.pending;
                   if (i < iterationResults.length) {
                     const r = iterationResults[i];
                     const correct = r.selectedOption.audioUrl === r.correctOption.audioUrl;
                     if (!r.confidence) {
                       // Plain ABX — single shade
-                      color = correct ? '#2e7d32' : '#c62828';
+                      color = correct ? theme.palette.success.dark : theme.palette.error.dark;
                     } else if (r.confidence === 'sure') {
-                      color = correct ? '#2e7d32' : '#c62828';
+                      color = correct ? theme.palette.success.dark : theme.palette.error.dark;
                     } else if (r.confidence === 'somewhat') {
-                      color = correct ? '#43a047' : '#e53935';
+                      color = correct ? theme.palette.success.main : theme.palette.error.main;
                     } else {
                       // guessing
-                      color = correct ? '#66bb6a' : '#ef5350';
+                      color = correct ? theme.palette.success.light : theme.palette.error.light;
                     }
                   }
                   return (

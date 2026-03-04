@@ -14,7 +14,7 @@
  */
 
 import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react';
-import { Box } from '@mui/material';
+import { Box, useTheme } from '@mui/material';
 import { averageChannels, downsampleRange } from './generateWaveform';
 import LoopRegion from './LoopRegion';
 import Playhead from './Playhead';
@@ -24,8 +24,6 @@ import OverviewBar from './OverviewBar';
 const WAVEFORM_HEIGHT = 120;
 const TIMELINE_HEIGHT = 24;
 const TOTAL_HEIGHT = WAVEFORM_HEIGHT + TIMELINE_HEIGHT;
-const WAVEFORM_COLOR = '#1976d2';
-const WAVEFORM_BG = '#f5f5f5';
 
 // Handle hit area: 44px total, biased outward from the loop region.
 // Start handle extends left, end handle extends right.
@@ -56,6 +54,7 @@ const Waveform = React.memo(function Waveform({
   onSeek,
   onLoopRegionChange,
 }) {
+  const theme = useTheme();
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const dragActiveRef = useRef(false);
@@ -786,7 +785,7 @@ const Waveform = React.memo(function Waveform({
         overscrollBehaviorX: 'none',
         cursor: 'pointer',
         borderRadius: 1,
-        border: '1px solid #e0e0e0',
+        border: `1px solid ${theme.palette.waveform.border}`,
         // Reserve space so layout doesn't jump when SVG appears
         minHeight: TOTAL_HEIGHT,
       }}
@@ -820,7 +819,7 @@ const Waveform = React.memo(function Waveform({
             style={{ display: 'block', position: 'sticky', left: 0 }}
           >
             {/* Background */}
-            <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={WAVEFORM_BG} />
+            <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={theme.palette.waveform.background} />
 
             {/* Loop region visuals (shading, lines, triangles — no interaction) */}
             <LoopRegion
@@ -832,7 +831,7 @@ const Waveform = React.memo(function Waveform({
             />
 
             {/* Waveform */}
-            <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.7} />
+            <path d={waveformPath} fill={theme.palette.waveform.fill} opacity={0.7} />
 
             {/* Center line */}
             <line
@@ -840,7 +839,7 @@ const Waveform = React.memo(function Waveform({
               y1={WAVEFORM_HEIGHT / 2}
               x2={containerWidth}
               y2={WAVEFORM_HEIGHT / 2}
-              stroke="#bdbdbd"
+              stroke={theme.palette.waveform.grid}
               strokeWidth={0.5}
             />
 

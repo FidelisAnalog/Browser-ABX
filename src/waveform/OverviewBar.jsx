@@ -10,18 +10,12 @@
  */
 
 import React, { useMemo, useRef, useEffect, useState, useId } from 'react';
-import { Box } from '@mui/material';
+import { Box, useTheme } from '@mui/material';
 import { downsampleRange } from './generateWaveform';
 
 const OVERVIEW_HEIGHT = 30;
-const PLAYHEAD_COLOR = '#d32f2f';
 const PLAYHEAD_WIDTH = 1.5;
-const WAVEFORM_COLOR = '#90a4ae';
-const WAVEFORM_ACTIVE_COLOR = '#1976d2';
-const BG_COLOR = '#eceff1';
-const VIEWPORT_BORDER = '#1976d2';
 const HANDLE_WIDTH = 6; // px hit area on viewport edges
-const LOOP_REGION_COLOR = 'rgba(255, 152, 0, 0.15)';
 
 /**
  * @param {object} props
@@ -46,6 +40,7 @@ const OverviewBar = React.memo(function OverviewBar({
   onGestureStart,
   onGestureEnd,
 }) {
+  const theme = useTheme();
   const clipId = useId();
   const containerRef = useRef(null);
   const playheadRef = useRef(null);
@@ -243,7 +238,7 @@ const OverviewBar = React.memo(function OverviewBar({
         position: 'relative',
         userSelect: 'none',
         borderRadius: '4px 4px 0 0',
-        border: '1px solid #e0e0e0',
+        border: `1px solid ${theme.palette.waveform.border}`,
         borderBottom: 'none',
         overflow: 'hidden',
         minHeight: OVERVIEW_HEIGHT,
@@ -257,10 +252,10 @@ const OverviewBar = React.memo(function OverviewBar({
           style={{ display: 'block' }}
         >
           {/* Background */}
-          <rect x={0} y={0} width={containerWidth} height={OVERVIEW_HEIGHT} fill={BG_COLOR} />
+          <rect x={0} y={0} width={containerWidth} height={OVERVIEW_HEIGHT} fill={theme.palette.waveform.overviewBackground} />
 
           {/* Waveform — grey base */}
-          <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.6} />
+          <path d={waveformPath} fill={theme.palette.waveform.overviewFill} opacity={0.6} />
 
           {/* Waveform — active region in blue (clipped to viewport) */}
           {isZoomed && <>
@@ -269,11 +264,11 @@ const OverviewBar = React.memo(function OverviewBar({
                 <rect x={vpLeft} y={0} width={vpWidth} height={OVERVIEW_HEIGHT} />
               </clipPath>
             </defs>
-            <path d={waveformPath} fill={WAVEFORM_ACTIVE_COLOR} opacity={0.7} clipPath={`url(#${clipId})`} />
+            <path d={waveformPath} fill={theme.palette.waveform.overviewActiveFill} opacity={0.7} clipPath={`url(#${clipId})`} />
 
             {/* Edge handles (visual indicators) */}
-            <line x1={vpLeft} y1={0} x2={vpLeft} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
-            <line x1={vpRight} y1={0} x2={vpRight} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
+            <line x1={vpLeft} y1={0} x2={vpLeft} y2={OVERVIEW_HEIGHT} stroke={theme.palette.waveform.overviewActiveFill} strokeWidth={2} />
+            <line x1={vpRight} y1={0} x2={vpRight} y2={OVERVIEW_HEIGHT} stroke={theme.palette.waveform.overviewActiveFill} strokeWidth={2} />
           </>}
 
           {/* Loop region highlight (display-only) */}
@@ -283,7 +278,7 @@ const OverviewBar = React.memo(function OverviewBar({
               y={0}
               width={Math.max(0, ((loopRegion[1] - loopRegion[0]) / duration) * containerWidth)}
               height={OVERVIEW_HEIGHT}
-              fill={LOOP_REGION_COLOR}
+              fill={theme.palette.waveform.loopRegion}
               pointerEvents="none"
             />
             <line
@@ -291,7 +286,7 @@ const OverviewBar = React.memo(function OverviewBar({
               y1={0}
               x2={(loopRegion[0] / duration) * containerWidth}
               y2={OVERVIEW_HEIGHT}
-              stroke="#f57c00"
+              stroke={theme.palette.waveform.loopHandle}
               strokeWidth={1.5}
               pointerEvents="none"
             />
@@ -300,7 +295,7 @@ const OverviewBar = React.memo(function OverviewBar({
               y1={0}
               x2={(loopRegion[1] / duration) * containerWidth}
               y2={OVERVIEW_HEIGHT}
-              stroke="#f57c00"
+              stroke={theme.palette.waveform.loopHandle}
               strokeWidth={1.5}
               pointerEvents="none"
             />
@@ -310,7 +305,7 @@ const OverviewBar = React.memo(function OverviewBar({
           <line
             ref={playheadRef}
             x1={0} y1={0} x2={0} y2={OVERVIEW_HEIGHT}
-            stroke={PLAYHEAD_COLOR}
+            stroke={theme.palette.waveform.playhead}
             strokeWidth={PLAYHEAD_WIDTH}
             pointerEvents="none"
           />

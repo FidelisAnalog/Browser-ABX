@@ -5,9 +5,7 @@
  */
 
 import React from 'react';
-
-const REGION_COLOR = 'rgba(255, 152, 0, 0.15)';
-const HANDLE_COLOR = '#f57c00';
+import { useTheme } from '@mui/material';
 const HANDLE_TRIANGLE_SIZE = 8;
 
 /**
@@ -25,6 +23,7 @@ const LoopRegion = React.memo(function LoopRegion({
   height,
   timeToX,
 }) {
+  const theme = useTheme();
   const startX = timeToX(loopRegion[0]);
   const endX = timeToX(loopRegion[1]);
   const regionWidth = endX - startX;
@@ -61,7 +60,7 @@ const LoopRegion = React.memo(function LoopRegion({
           y={0}
           width={Math.max(0, regionWidth)}
           height={height}
-          fill={REGION_COLOR}
+          fill={theme.palette.waveform.loopRegion}
         />
       )}
 
@@ -71,18 +70,18 @@ const LoopRegion = React.memo(function LoopRegion({
         y1={0}
         x2={startX}
         y2={height}
-        stroke={HANDLE_COLOR}
+        stroke={theme.palette.waveform.loopHandle}
         strokeWidth={2}
         style={{ pointerEvents: 'none' }}
       />
       <polygon
         points={`${startX},0 ${startX + HANDLE_TRIANGLE_SIZE},0 ${startX},${HANDLE_TRIANGLE_SIZE}`}
-        fill={HANDLE_COLOR}
+        fill={theme.palette.waveform.loopHandle}
         style={{ pointerEvents: 'none' }}
       />
       <polygon
         points={`${startX},${height} ${startX + HANDLE_TRIANGLE_SIZE},${height} ${startX},${height - HANDLE_TRIANGLE_SIZE}`}
-        fill={HANDLE_COLOR}
+        fill={theme.palette.waveform.loopHandle}
         style={{ pointerEvents: 'none' }}
       />
 
@@ -92,18 +91,18 @@ const LoopRegion = React.memo(function LoopRegion({
         y1={0}
         x2={endX}
         y2={height}
-        stroke={HANDLE_COLOR}
+        stroke={theme.palette.waveform.loopHandle}
         strokeWidth={2}
         style={{ pointerEvents: 'none' }}
       />
       <polygon
         points={`${endX},0 ${endX - HANDLE_TRIANGLE_SIZE},0 ${endX},${HANDLE_TRIANGLE_SIZE}`}
-        fill={HANDLE_COLOR}
+        fill={theme.palette.waveform.loopHandle}
         style={{ pointerEvents: 'none' }}
       />
       <polygon
         points={`${endX},${height} ${endX - HANDLE_TRIANGLE_SIZE},${height} ${endX},${height - HANDLE_TRIANGLE_SIZE}`}
-        fill={HANDLE_COLOR}
+        fill={theme.palette.waveform.loopHandle}
         style={{ pointerEvents: 'none' }}
       />
     </g>
