@@ -7,14 +7,14 @@ import { Box, Button, Container, Link, Paper, Typography } from '@mui/material';
 import GitHubIcon from '@mui/icons-material/GitHub';
 
 export default function LandingPage() {
-  useEffect(() => { document.title = 'DBT'; }, []);
+  useEffect(() => { document.title = 'acidtest.io'; }, []);
   return (
     <Box sx={{ minHeight: '100vh' }} pt={4} pb={4}>
       <Container maxWidth="md">
         <Paper>
           <Box p={4} textAlign="center">
             <Typography variant="h3" gutterBottom>
-              DBT
+              acidtest.io
             </Typography>
             <Typography variant="h6" color="text.secondary" gutterBottom>
               Double-blind audio listening tests in your browser
@@ -22,7 +22,7 @@ export default function LandingPage() {
 
             <Box mt={4} mb={4}>
               <Typography variant="body1" paragraph>
-                DBT is a tool for creating and conducting double-blind listening tests
+                acidtest.io is a tool for creating and conducting double-blind listening tests
                 — AB, ABX(Y), Triangle, Same/Different, and adaptive staircase. It runs
                 entirely in your browser with a focus on audio integrity — custom WAV/FLAC
                 decoding, sample rate matching, and a clean playback pipeline.
