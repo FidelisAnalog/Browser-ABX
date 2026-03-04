@@ -1,6 +1,6 @@
 /**
  * formatResultsForEmit — transforms internal results state into the public
- * postMessage payload shape for dbt:completed.
+ * postMessage payload shape for acidtest:completed.
  *
  * This is the serialization boundary between internal pipeline and public API.
  * Internal results contain full option objects (with audioUrl, etc.); the public

@@ -125,7 +125,7 @@ export default function App() {
     if (!isEmbedded) return;
 
     const handler = (e) => {
-      if (e.data?.type === 'dbt:config') {
+      if (e.data?.type === 'acidtest:config') {
         try {
           const normalized = normalizeConfig(e.data.config);
           const opts = { ...DEFAULT_EMBED_OPTIONS, ...e.data.options };
@@ -138,9 +138,9 @@ export default function App() {
           }
         } catch (err) {
           setEmbedError(err.message);
-          emitEvent('dbt:error', { error: err.message });
+          emitEvent('acidtest:error', { error: err.message });
         }
-      } else if (e.data?.type === 'dbt:theme') {
+      } else if (e.data?.type === 'acidtest:theme') {
         // Live theme update from parent
         const t = e.data.theme;
         if (t === 'light' || t === 'dark' || t === 'system') {
@@ -150,7 +150,7 @@ export default function App() {
     };
 
     window.addEventListener('message', handler);
-    emitEvent('dbt:ready');
+    emitEvent('acidtest:ready');
 
     return () => window.removeEventListener('message', handler);
   }, []);

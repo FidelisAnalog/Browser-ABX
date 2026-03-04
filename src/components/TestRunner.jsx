@@ -33,7 +33,7 @@ import SampleRateInfo from './SampleRateInfo';
  * @param {object} props
  * @param {string} [props.configUrl] - URL to YAML config (standalone mode)
  * @param {object} [props.config] - Pre-parsed config object (embed mode, already normalized)
- * @param {boolean} [props.postResults] - Include results in dbt:completed event (default: true)
+ * @param {boolean} [props.postResults] - Include results in acidtest:completed event (default: true)
  * @param {boolean} [props.skipWelcome] - Skip welcome screen, auto-start when audio ready
  * @param {boolean} [props.skipResults] - Skip results screen, show minimal completion state
  */
@@ -125,7 +125,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     }
   }, [engine, currentTest]);
 
-  // Track whether dbt:completed has been emitted (prevent duplicates on re-render)
+  // Track whether acidtest:completed has been emitted (prevent duplicates on re-render)
   const completedEmittedRef = useRef(false);
 
   /** Initialize results array from a config object. */
@@ -183,7 +183,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     loadAndValidate(audioUrls, (loaded, total) => {
       if (!controller.signal.aborted) {
         setLoadProgress({ loaded, total });
-        emitEvent('dbt:loading', { loaded, total });
+        emitEvent('acidtest:loading', { loaded, total });
       }
     }, { signal: controller.signal })
       .then((data) => {
@@ -423,7 +423,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     setForm(formData);
     setTestStep(0);
     setRepeatStep(0);
-    emitEvent('dbt:started', { form: formData });
+    emitEvent('acidtest:started', { form: formData });
     if (config.tests.length > 0) {
       const iterationData = setupIteration(config.tests[0], 0, true);
       loadIterationAudio(iterationData);
@@ -573,7 +573,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     const { entry } = getTestType(test.testType);
 
     // Emit progress event — trial just completed
-    emitEvent('dbt:progress', {
+    emitEvent('acidtest:progress', {
       testIndex: testStep,
       testName: test.name,
       trialIndex: repeatStep,
@@ -610,7 +610,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     }
   };
 
-  // Emit dbt:completed when all tests are done
+  // Emit acidtest:completed when all tests are done
   useEffect(() => {
     if (!config || testStep < config.tests.length || completedEmittedRef.current) return;
     completedEmittedRef.current = true;
@@ -622,9 +622,9 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
         return entry.computeStats(result.name, result.optionNames, resultData);
       });
       const shareUrl = createShareUrl(allStats, config, configUrl);
-      emitEvent('dbt:completed', { results: formatResultsForEmit(results), stats: allStats, shareUrl, form });
+      emitEvent('acidtest:completed', { results: formatResultsForEmit(results), stats: allStats, shareUrl, form });
     } else {
-      emitEvent('dbt:completed');
+      emitEvent('acidtest:completed');
     }
   }, [config, testStep, postResults, results, form]);
 

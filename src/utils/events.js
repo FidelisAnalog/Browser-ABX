@@ -6,7 +6,7 @@
 
 /**
  * Emit a postMessage event to the parent window.
- * @param {string} type - Event type (e.g. 'dbt:ready', 'dbt:progress')
+ * @param {string} type - Event type (e.g. 'acidtest:ready', 'acidtest:progress')
  * @param {object} [data] - Event payload
  */
 export function emitEvent(type, data = {}) {

@@ -123,7 +123,7 @@
     // Listen for postMessage events from the iframe
     window.addEventListener('message', (e) => {
       const data = e.data;
-      if (!data || typeof data.type !== 'string' || !data.type.startsWith('dbt:')) return;
+      if (!data || typeof data.type !== 'string' || !data.type.startsWith('acidtest:')) return;
       logEvent(data);
     });
 
@@ -132,7 +132,7 @@
       try {
         config = JSON.parse(document.getElementById('configInput').value);
       } catch (err) {
-        logEvent({ type: 'dbt:error', error: 'Invalid JSON: ' + err.message });
+        logEvent({ type: 'acidtest:error', error: 'Invalid JSON: ' + err.message });
         return;
       }
 
@@ -156,10 +156,10 @@
       container.appendChild(iframe);
 
       const readyHandler = (e) => {
-        if (e.data?.type === 'dbt:ready') {
+        if (e.data?.type === 'acidtest:ready') {
           window.removeEventListener('message', readyHandler);
           iframe.contentWindow.postMessage({
-            type: 'dbt:config',
+            type: 'acidtest:config',
             config: config,
             options: options,
           }, '*');
@@ -168,7 +168,7 @@
       };
       window.addEventListener('message', readyHandler);
 
-      logEvent({ type: 'parent:info', message: 'Iframe created, waiting for dbt:ready...' });
+      logEvent({ type: 'parent:info', message: 'Iframe created, waiting for acidtest:ready...' });
     }
 
     function sendTheme() {
@@ -177,7 +177,7 @@
         return;
       }
       const theme = document.getElementById('themeSelect').value;
-      iframe.contentWindow.postMessage({ type: 'dbt:theme', theme }, '*');
+      iframe.contentWindow.postMessage({ type: 'acidtest:theme', theme }, '*');
       logEvent({ type: 'parent:sent', message: 'Theme sent: ' + theme });
     }
 
@@ -187,7 +187,7 @@
       entry.className = 'log-entry';
 
       const time = new Date().toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 1 });
-      const typeClass = data.type.replace('dbt:', '').replace('parent:', '');
+      const typeClass = data.type.replace('acidtest:', '').replace('parent:', '');
 
       const payload = { ...data };
       delete payload.type;
@@ -206,7 +206,7 @@
       log.appendChild(entry);
       log.scrollTop = log.scrollHeight;
 
-      if (data.type === 'dbt:completed' && data.results) {
+      if (data.type === 'acidtest:completed' && data.results) {
         const detail = document.createElement('div');
         detail.className = 'log-entry';
         detail.innerHTML = `<span class="log-time">${time}</span>`

@@ -10,21 +10,21 @@ Build the SPA (`npm run build`) and host the contents of `dist/` on your own ser
 
 1. Parent creates an iframe pointing at the hosted app (no query params)
 2. App detects it's inside an iframe (`window.parent !== window`)
-3. App posts `dbt:ready` to parent
-4. Parent receives `dbt:ready`, posts `dbt:config` with the test config and options
+3. App posts `acidtest:ready` to parent
+4. Parent receives `acidtest:ready`, posts `acidtest:config` with the test config and options
 5. App validates the config, loads audio, and runs the test
 6. App posts progress and completion events back to parent
 
-## Parent → App: `dbt:config`
+## Parent → App: `acidtest:config`
 
 ```js
 iframe.contentWindow.postMessage({
-  type: 'dbt:config',
+  type: 'acidtest:config',
   config: { /* test config — see below */ },
   options: {
-    postResults: true,   // include results/stats in dbt:completed (default: true)
+    postResults: true,   // include results/stats in acidtest:completed (default: true)
     skipWelcome: false,   // skip welcome screen, auto-start when audio is ready (default: false)
-    skipResults: false,   // skip results screen, emit dbt:completed and show "Test complete" (default: false)
+    skipResults: false,   // skip results screen, emit acidtest:completed and show "Test complete" (default: false)
     theme: 'system',     // 'light', 'dark', or 'system' (default: 'system')
   }
 }, '*');
@@ -34,10 +34,10 @@ iframe.contentWindow.postMessage({
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `postResults` | boolean | `true` | When `true`, `dbt:completed` includes `results`, `stats`, `shareUrl`, and `form`. When `false`, `dbt:completed` is empty. |
+| `postResults` | boolean | `true` | When `true`, `acidtest:completed` includes `results`, `stats`, `shareUrl`, and `form`. When `false`, `acidtest:completed` is empty. |
 | `skipWelcome` | boolean | `false` | Skip the welcome screen. The test auto-starts as soon as audio is loaded. No welcome form data is collected. |
 | `skipResults` | boolean | `false` | Skip the results screen. The app shows a minimal "Test complete" message instead of the full results view. Use this when the parent handles result display. |
-| `theme` | string | `'system'` | Color scheme: `'light'`, `'dark'`, or `'system'` (follows OS preference). Can be changed live via `dbt:theme`. |
+| `theme` | string | `'system'` | Color scheme: `'light'`, `'dark'`, or `'system'` (follows OS preference). Can be changed live via `acidtest:theme`. |
 
 ## Config JSON Structure
 
@@ -81,7 +81,7 @@ The config object is the same structure as the YAML config, but as JSON. The app
 | `name` | yes | Test name. Shown in the page title. |
 | `welcome` | no | Welcome screen config. Omit to show a default welcome screen with no form. |
 | `welcome.description` | no | Markdown content for the welcome screen. |
-| `welcome.form` | no | Array of form fields shown before the test starts. Each field has `name`, `inputType` (`text`, `number`, `select`), and `options` (for select). Collected data is included in `dbt:started` and `dbt:completed` events. |
+| `welcome.form` | no | Array of form fields shown before the test starts. Each field has `name`, `inputType` (`text`, `number`, `select`), and `options` (for select). Collected data is included in `acidtest:started` and `acidtest:completed` events. |
 | `results` | no | Results screen config. |
 | `results.description` | no | Markdown content shown above the results. |
 | `options` | yes | Array of audio options. Each option has a unique `name`, an `audioUrl`, and an optional `tag`. |
@@ -128,63 +128,63 @@ The `+C` suffix adds a confidence slider to each trial. Confidence values are in
 
 Staircase tests use a `staircase` config object instead of `repeat`. See the main YAML documentation for staircase-specific fields.
 
-## Parent → App: `dbt:theme`
+## Parent → App: `acidtest:theme`
 
 Change the color scheme at any time after config is sent. Useful for syncing with the parent page's own theme toggle.
 
 ```js
-iframe.contentWindow.postMessage({ type: 'dbt:theme', theme: 'dark' }, '*');
+iframe.contentWindow.postMessage({ type: 'acidtest:theme', theme: 'dark' }, '*');
 ```
 
 Valid values: `'light'`, `'dark'`, `'system'`.
 
 ## App → Parent: Events
 
-All events are posted to `window.parent` via `postMessage`. Each message has a `type` field prefixed with `dbt:`.
+All events are posted to `window.parent` via `postMessage`. Each message has a `type` field prefixed with `acidtest:`.
 
-### `dbt:ready`
+### `acidtest:ready`
 
 Fired when the iframe has loaded and is waiting for config.
 
 ```json
-{ "type": "dbt:ready" }
+{ "type": "acidtest:ready" }
 ```
 
-**Action required:** Send `dbt:config` to the iframe in response.
+**Action required:** Send `acidtest:config` to the iframe in response.
 
-### `dbt:error`
+### `acidtest:error`
 
 Fired if config validation fails.
 
 ```json
-{ "type": "dbt:error", "error": "Config must have a \"name\" field" }
+{ "type": "acidtest:error", "error": "Config must have a \"name\" field" }
 ```
 
-### `dbt:loading`
+### `acidtest:loading`
 
 Fired during audio download. May fire many times.
 
 ```json
-{ "type": "dbt:loading", "loaded": 3, "total": 5 }
+{ "type": "acidtest:loading", "loaded": 3, "total": 5 }
 ```
 
 `loaded` and `total` are file counts, not bytes.
 
-### `dbt:started`
+### `acidtest:started`
 
 Fired when the welcome form is submitted and the test begins. If `skipWelcome` is `true`, `form` is `{}`.
 
 ```json
-{ "type": "dbt:started", "form": { "Age": "30", "Headphone Type": "Over-ear" } }
+{ "type": "acidtest:started", "form": { "Age": "30", "Headphone Type": "Over-ear" } }
 ```
 
-### `dbt:progress`
+### `acidtest:progress`
 
 Fired after each trial is submitted.
 
 ```json
 {
-  "type": "dbt:progress",
+  "type": "acidtest:progress",
   "testIndex": 0,
   "testName": "ABX: A vs B",
   "trialIndex": 4,
@@ -195,21 +195,21 @@ Fired after each trial is submitted.
 
 `trialIndex` is 0-based (the trial that was just completed). `totalTrials` is `null` for adaptive tests (staircase) since the total isn't known in advance.
 
-### `dbt:completed`
+### `acidtest:completed`
 
 Fired when all tests are finished. Payload depends on `postResults`.
 
 With `postResults: false`:
 
 ```json
-{ "type": "dbt:completed" }
+{ "type": "acidtest:completed" }
 ```
 
 With `postResults: true`, the message includes `results`, `stats`, `shareUrl`, and `form`:
 
 ```json
 {
-  "type": "dbt:completed",
+  "type": "acidtest:completed",
   "results": [ /* per-test iteration data — see below */ ],
   "stats": [ /* per-test computed statistics (p-values, matrices, etc.) */ ],
   "shareUrl": "https://...",
@@ -322,21 +322,21 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
     };
 
     window.addEventListener('message', (e) => {
-      if (e.data?.type === 'dbt:ready') {
+      if (e.data?.type === 'acidtest:ready') {
         document.getElementById('testFrame').contentWindow.postMessage({
-          type: 'dbt:config',
+          type: 'acidtest:config',
           config: config,
           options: { postResults: true, skipWelcome: true, skipResults: true }
         }, '*');
       }
 
-      if (e.data?.type === 'dbt:completed') {
+      if (e.data?.type === 'acidtest:completed') {
         console.log('Results:', e.data.results);
         console.log('Stats:', e.data.stats);
         // Navigate to your own results page, POST to your backend, etc.
       }
 
-      if (e.data?.type === 'dbt:progress') {
+      if (e.data?.type === 'acidtest:progress') {
         console.log(`Trial ${e.data.trialIndex + 1}/${e.data.totalTrials} of test ${e.data.testIndex + 1}/${e.data.totalTests}`);
       }
     });
@@ -347,7 +347,7 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
 
 ## Abandonment Tracking
 
-The app does not track abandonment directly. The parent should monitor `dbt:progress` events to know the current position. If `dbt:completed` never arrives, the parent can infer the test was abandoned. Since the iframe shares the parent's tab lifecycle, closing the tab ends both.
+The app does not track abandonment directly. The parent should monitor `acidtest:progress` events to know the current position. If `acidtest:completed` never arrives, the parent can infer the test was abandoned. Since the iframe shares the parent's tab lifecycle, closing the tab ends both.
 
 ## Working Example
 
