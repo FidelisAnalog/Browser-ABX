@@ -16,7 +16,7 @@ export default function SharedResults({ shareParam }) {
   const { config, stats, configUrl, error } = useMemo(() => {
     try {
       const decoded = decodeShareParam(shareParam);
-      document.title = `Results — ${decoded.config.name} — DBT`;
+      document.title = `Results — ${decoded.config.name} — acidtest.io`;
       return decoded;
     } catch (err) {
       return { config: null, stats: null, configUrl: null, error: err.message };

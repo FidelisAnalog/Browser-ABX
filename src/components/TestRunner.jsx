@@ -72,11 +72,11 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   useEffect(() => {
     if (!config) return;
     if (testStep === -1) {
-      document.title = `${config.name} — DBT`;
+      document.title = `${config.name} — acidtest.io`;
     } else if (testStep >= config.tests.length) {
-      document.title = `Results — ${config.name} — DBT`;
+      document.title = `Results — ${config.name} — acidtest.io`;
     } else {
-      document.title = `${config.tests[testStep].name} — DBT`;
+      document.title = `${config.tests[testStep].name} — acidtest.io`;
     }
   }, [config, testStep]);
 
