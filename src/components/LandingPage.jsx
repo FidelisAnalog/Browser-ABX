@@ -17,7 +17,7 @@ export default function LandingPage() {
               acidtest.io
             </Typography>
             <Typography variant="h6" color="text.secondary" gutterBottom>
-              Double-blind audio listening tests in your browser
+              audio listening tests in your browser
             </Typography>
 
             <Box mt={4} mb={4}>
