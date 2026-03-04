@@ -13,6 +13,7 @@ import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
 import { useHotkeys } from '../audio/useHotkeys';
+import { useHeardTracks } from '../audio/useHeardTracks';
 
 /**
  * @param {object} props
@@ -54,13 +55,17 @@ export default function SameDiffTest({
   // The user's answer: 'same' or 'different', or null
   const [answer, setAnswer] = useState(null);
   const [pendingSubmit, setPendingSubmit] = useState(false);
+  const { heardTracks, markHeard } = useHeardTracks(pair);
 
   // Reset state when pair changes (new iteration)
   useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [pair]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
+    markHeard(index);
   };
+
+  const canAnswer = heardTracks.size >= trackCount;
 
   const handleAnswerClick = (response) => {
     setAnswer(response);
@@ -135,6 +140,7 @@ export default function SameDiffTest({
                       variant="outlined"
                       color="primary"
                       onClick={() => handleAnswerClick('same')}
+                      disabled={!canAnswer}
                       sx={{ textTransform: 'none', minWidth: 100 }}
                     >
                       Same
@@ -143,6 +149,7 @@ export default function SameDiffTest({
                       variant="outlined"
                       color="primary"
                       onClick={() => handleAnswerClick('different')}
+                      disabled={!canAnswer}
                       sx={{ textTransform: 'none', minWidth: 100 }}
                     >
                       Different

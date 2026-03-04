@@ -14,6 +14,7 @@ import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
 import { useHotkeys } from '../audio/useHotkeys';
+import { useHeardTracks } from '../audio/useHeardTracks';
 
 /**
  * @param {object} props
@@ -56,12 +57,14 @@ export default function ABXTest({
   const [answer, setAnswer] = useState(null);
   // Whether the confidence stack is showing (ABX+C only)
   const [pendingSubmit, setPendingSubmit] = useState(false);
+  const { heardTracks, markHeard } = useHeardTracks(xOption);
 
   // Reset state when X changes (new iteration)
   useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [xOption]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
+    markHeard(index);
     // If they selected a non-X track, that's their answer; selecting X resets
     setAnswer(index === xTrackIndex ? null : index);
     setPendingSubmit(false);
@@ -93,7 +96,7 @@ export default function ABXTest({
     onSubmit(options[answer], getCorrectOption(), confidence);
   };
 
-  const canSubmit = answer !== null;
+  const canSubmit = answer !== null && heardTracks.has(xTrackIndex);
 
   useHotkeys({ engine, trackCount, xTrackIndex, onTrackSelect: handleTrackSelect, onSubmit: handleSubmitClick });
 

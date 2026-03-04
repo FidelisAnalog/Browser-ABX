@@ -14,6 +14,7 @@ import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
 import { useHotkeys } from '../audio/useHotkeys';
+import { useHeardTracks } from '../audio/useHeardTracks';
 
 /**
  * @param {object} props
@@ -52,12 +53,14 @@ export default function TriangleTest({
 
   const [answer, setAnswer] = useState(null);
   const [pendingSubmit, setPendingSubmit] = useState(false);
+  const { heardTracks, markHeard } = useHeardTracks(triplet);
 
   // Reset state when triplet changes (new iteration)
   useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [triplet]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
+    markHeard(index);
     setAnswer(index);
     setPendingSubmit(false);
   };
@@ -82,7 +85,7 @@ export default function TriangleTest({
     onSubmit(triplet[answer], correctOption, confidence);
   };
 
-  const canSubmit = answer !== null;
+  const canSubmit = answer !== null && heardTracks.size >= trackCount;
 
   useHotkeys({ engine, trackCount, onTrackSelect: handleTrackSelect, onSubmit: handleSubmitClick });
 

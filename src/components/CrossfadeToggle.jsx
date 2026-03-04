@@ -11,17 +11,29 @@ import { useCrossfadeEnabled } from '../audio/useEngineState';
 /**
  * @param {object} props
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
- * @param {boolean} props.forced - Whether crossfade is forced by config (toggle locked)
+ * @param {boolean|null} props.forced - true = force on, false = force off, null = user choice
  */
 export default function CrossfadeToggle({ engine, forced }) {
   const enabled = useCrossfadeEnabled(engine);
 
-  if (forced) {
+  if (forced === true) {
     return (
-      <Tooltip title="Crossfade is required for this test to mask track switching artifacts">
+      <Tooltip title="Crossfade has been set by the test administrator">
         <Box display="flex" alignItems="center">
           <Typography variant="caption" color="text.secondary">
-            Crossfade: On (required)
+            Crossfade: On
+          </Typography>
+        </Box>
+      </Tooltip>
+    );
+  }
+
+  if (forced === false) {
+    return (
+      <Tooltip title="Crossfade has been set by the test administrator">
+        <Box display="flex" alignItems="center">
+          <Typography variant="caption" color="text.secondary">
+            Crossfade: Off
           </Typography>
         </Box>
       </Tooltip>

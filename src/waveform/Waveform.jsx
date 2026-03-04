@@ -13,7 +13,7 @@
  * including at the edges of the waveform.
  */
 
-import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react';
+import React, { useMemo, useRef, useCallback, useState, useEffect, useImperativeHandle } from 'react';
 import { Box, useTheme } from '@mui/material';
 import { averageChannels, downsampleRange } from './generateWaveform';
 import LoopRegion from './LoopRegion';
@@ -46,14 +46,14 @@ const PAN_FACTOR = 0.25;         // pan by 25% of view width per Shift+scroll st
  * @param {(time: number) => void} props.onSeek - Seek callback
  * @param {(start: number, end: number) => void} props.onLoopRegionChange - Loop region change callback
  */
-const Waveform = React.memo(function Waveform({
+const Waveform = React.memo(React.forwardRef(function Waveform({
   channelData,
   duration,
   currentTimeRef,
   loopRegion,
   onSeek,
   onLoopRegionChange,
-}) {
+}, ref) {
   const theme = useTheme();
   const containerRef = useRef(null);
   const svgRef = useRef(null);
@@ -269,9 +269,22 @@ const Waveform = React.memo(function Waveform({
     setUserView(0, durationRef.current);
   }, [setUserView]);
 
-  // Expose zoom controls via ref for external use (overview bar)
+  // Expose zoom controls via ref for internal use (overview bar)
   const zoomControlsRef = useRef({ applyZoom, applyPan, resetZoom, setViewStart, setViewEnd });
   zoomControlsRef.current = { applyZoom, applyPan, resetZoom, setViewStart, setViewEnd };
+
+  // Expose zoom methods to parent via forwardRef
+  useImperativeHandle(ref, () => ({
+    zoomIn() {
+      const pos = currentTimeRef ? currentTimeRef.current : 0;
+      applyZoom(-30, timeToXRef.current(pos));
+    },
+    zoomOut() {
+      const pos = currentTimeRef ? currentTimeRef.current : 0;
+      applyZoom(30, timeToXRef.current(pos));
+    },
+    resetZoom,
+  }), [applyZoom, resetZoom, currentTimeRef]);
 
   // --- Playhead follow (iZotope RX-style) ---
   // Follow is opt-in: engages when user pans/zooms viewport to include the
@@ -909,6 +922,6 @@ const Waveform = React.memo(function Waveform({
     </Box>
     </>
   );
-});
+}));
 
 export default Waveform;

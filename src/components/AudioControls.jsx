@@ -1,15 +1,24 @@
 /**
  * AudioControls — combined component assembling waveform display, transport controls,
- * volume slider, and crossfade toggle into a single audio control panel.
+ * zoom controls, volume slider, and crossfade toggle into a single audio control panel.
+ *
+ * Layout: three flex children in a wrapping row.
+ * - Transport (left-anchored, no grow)
+ * - Middle group: crossfade + volume (grows to fill, items spaced evenly)
+ * - Zoom (right-anchored, no grow)
+ * On narrow viewports the middle group wraps to a second line at full width.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Box, Paper, IconButton, Tooltip } from '@mui/material';
 import Waveform from '../waveform/Waveform';
 import TransportControls from './TransportControls';
 import VolumeSlider from './VolumeSlider';
 import CrossfadeToggle from './CrossfadeToggle';
 import ReplayIcon from '@mui/icons-material/Replay';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import ZoomOutMapIcon from '@mui/icons-material/ZoomOutMap';
 import { useDuration, useLoopRegion, useTransportState } from '../audio/useEngineState';
 
 /**
@@ -22,6 +31,7 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
   const duration = useDuration(engine);
   const loopRegion = useLoopRegion(engine);
   const transportState = useTransportState(engine);
+  const waveformRef = useRef(null);
 
   const onSeek = useCallback((t) => engine?.seek(t), [engine]);
   const onLoopRegionChange = useCallback((s, e) => engine?.setLoopRegion(s, e), [engine]);
@@ -52,6 +62,7 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
       {/* Waveform */}
       <Box mb={1}>
         <Waveform
+          ref={waveformRef}
           channelData={channelData}
           duration={duration}
           currentTimeRef={engine?.currentTimeRef}
@@ -66,12 +77,11 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
         display="flex"
         flexDirection="row"
         alignItems="center"
-        justifyContent="space-between"
         flexWrap="wrap"
         gap={1}
       >
         {/* Left: Transport + bracket controls */}
-        <Box display="flex" alignItems="center" gap={0.5}>
+        <Box display="flex" alignItems="center" gap={0.5} sx={{ order: 1 }}>
           <TransportControls engine={engine} />
           <Tooltip title="Jump back 2s">
             <span>
@@ -110,12 +120,63 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
           </Tooltip>
         </Box>
 
-        {/* Center: Crossfade toggle */}
-        <CrossfadeToggle engine={engine} forced={crossfadeForced} />
+        {/* Middle: Crossfade + Volume — grows to fill, wraps to row 2 on narrow viewports */}
+        <Box
+          display="flex"
+          alignItems="center"
+          justifyContent="space-evenly"
+          gap={1}
+          sx={{
+            order: 3,
+            flexGrow: 1,
+            flexBasis: '100%',
+            '@media (min-width: 800px)': {
+              order: 2,
+              flexBasis: 'auto',
+            },
+          }}
+        >
+          <CrossfadeToggle engine={engine} forced={crossfadeForced} />
+          <Box sx={{ minWidth: 140, maxWidth: 200 }}>
+            <VolumeSlider engine={engine} />
+          </Box>
+        </Box>
 
-        {/* Right: Volume */}
-        <Box sx={{ minWidth: 140, maxWidth: 200 }}>
-          <VolumeSlider engine={engine} />
+        {/* Right: Zoom controls — ml:auto keeps it right-anchored when middle wraps */}
+        <Box display="flex" alignItems="center" gap={0.5} sx={{ order: 2, ml: 'auto' }}>
+          <Tooltip title="Zoom in (+)">
+            <span>
+              <IconButton
+                onClick={() => waveformRef.current?.zoomIn()}
+                disabled={duration <= 0}
+                size="medium"
+              >
+                <ZoomInIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Zoom out (\u2212)">
+            <span>
+              <IconButton
+                onClick={() => waveformRef.current?.zoomOut()}
+                disabled={duration <= 0}
+                size="medium"
+              >
+                <ZoomOutIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Reset zoom (0)">
+            <span>
+              <IconButton
+                onClick={() => waveformRef.current?.resetZoom()}
+                disabled={duration <= 0}
+                size="medium"
+              >
+                <ZoomOutMapIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
     </Paper>

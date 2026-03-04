@@ -23,7 +23,7 @@ import { createShareUrl } from '../utils/share';
  * @param {object[]} [props.precomputedStats] - Pre-computed stats (for shared results)
  * @param {() => void} [props.onRestart] - Callback to restart the test (without re-downloading audio)
  */
-export default function Results({ description, results, config, precomputedStats, onRestart }) {
+export default function Results({ description, results, config, precomputedStats, onRestart, configUrl }) {
   const [copied, setCopied] = useState(false);
 
   const { abStats, abxStats, abxyStats, triangleStats, sdStats, staircaseStats, abTagStats, abxTagStats, shareUrl } = useMemo(() => {
@@ -89,7 +89,7 @@ export default function Results({ description, results, config, precomputedStats
       staircaseStats: sc,
       abTagStats: computeAbTagStats(ab, config),
       abxTagStats: computeAbxTagStats([...abx, ...abxy, ...tri, ...sd], config),
-      shareUrl: createShareUrl(allStats, config),
+      shareUrl: createShareUrl(allStats, config, configUrl),
     };
   }, [results, config, precomputedStats]);
 

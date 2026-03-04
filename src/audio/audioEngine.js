@@ -312,12 +312,14 @@ export class AudioEngine {
 
   /**
    * Lock crossfade on/off based on test config.
-   * @param {boolean} forced
+   * @param {boolean|null} forced - true = force on, false = force off, null = user choice
    */
   setCrossfadeForced(forced) {
-    this._crossfadeForced = forced;
-    if (forced) {
+    this._crossfadeForced = forced !== null;
+    if (forced === true) {
       this._crossfadeEnabled = true;
+    } else if (forced === false) {
+      this._crossfadeEnabled = false;
     }
     this._notify();
   }

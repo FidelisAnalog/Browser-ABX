@@ -13,6 +13,7 @@ import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
 import { useHotkeys } from '../audio/useHotkeys';
+import { useHeardTracks } from '../audio/useHeardTracks';
 
 /**
  * @param {object} props
@@ -55,12 +56,14 @@ export default function StaircaseTest({
   const theme = useTheme();
   const selectedTrack = useSelectedTrack(engine);
   const [answer, setAnswer] = useState(null);
+  const { heardTracks, markHeard } = useHeardTracks(pair);
 
   // Reset answer when pair changes (new trial)
   useEffect(() => { setAnswer(null); }, [pair]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
+    markHeard(index);
     setAnswer(index);
   };
 
@@ -69,7 +72,7 @@ export default function StaircaseTest({
     return String.fromCharCode(65 + answer);
   };
 
-  const canSubmit = familiarizing || answer !== null;
+  const canSubmit = familiarizing || (answer !== null && heardTracks.size >= trackCount);
 
   const handleSubmit = () => {
     if (!canSubmit) return;

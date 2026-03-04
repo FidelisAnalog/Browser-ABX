@@ -25,6 +25,7 @@ iframe.contentWindow.postMessage({
     postResults: true,   // include results/stats in dbt:completed (default: true)
     skipWelcome: false,   // skip welcome screen, auto-start when audio is ready (default: false)
     skipResults: false,   // skip results screen, emit dbt:completed and show "Test complete" (default: false)
+    theme: 'system',     // 'light', 'dark', or 'system' (default: 'system')
   }
 }, '*');
 ```
@@ -36,6 +37,7 @@ iframe.contentWindow.postMessage({
 | `postResults` | boolean | `true` | When `true`, `dbt:completed` includes `results`, `stats`, `shareUrl`, and `form`. When `false`, `dbt:completed` is empty. |
 | `skipWelcome` | boolean | `false` | Skip the welcome screen. The test auto-starts as soon as audio is loaded. No welcome form data is collected. |
 | `skipResults` | boolean | `false` | Skip the results screen. The app shows a minimal "Test complete" message instead of the full results view. Use this when the parent handles result display. |
+| `theme` | string | `'system'` | Color scheme: `'light'`, `'dark'`, or `'system'` (follows OS preference). Can be changed live via `dbt:theme`. |
 
 ## Config JSON Structure
 
@@ -102,7 +104,7 @@ The config object is the same structure as the YAML config, but as JSON. The app
 | `description` | no | `null` | Instructions shown during the test. |
 | `options` | yes | | Array of option names (strings) referencing top-level `options` by name. |
 | `repeat` | no | `10` | Number of trials. Max 50. Not used by staircase tests. |
-| `crossfade` | no | `false` | Enable crossfade between options during playback switching. |
+| `crossfade` | no | *(user choice)* | `true` forces crossfade on, `false` forces it off, omit to let the user toggle. |
 | `crossfadeDuration` | no | | Crossfade duration in milliseconds. |
 | `showProgress` | no | `false` | Show running accuracy during the test (ABX, Triangle, etc.). |
 | `balanced` | no | `true` | For 2AFC-SD: use balanced trial sequences (blocked randomization). |
@@ -125,6 +127,16 @@ The config object is the same structure as the YAML config, but as JSON. The app
 The `+C` suffix adds a confidence slider to each trial. Confidence values are included in the results data.
 
 Staircase tests use a `staircase` config object instead of `repeat`. See the main YAML documentation for staircase-specific fields.
+
+## Parent → App: `dbt:theme`
+
+Change the color scheme at any time after config is sent. Useful for syncing with the parent page's own theme toggle.
+
+```js
+iframe.contentWindow.postMessage({ type: 'dbt:theme', theme: 'dark' }, '*');
+```
+
+Valid values: `'light'`, `'dark'`, `'system'`.
 
 ## App → Parent: Events
 
@@ -187,25 +199,107 @@ Fired after each trial is submitted.
 
 Fired when all tests are finished. Payload depends on `postResults`.
 
-With `postResults: true`:
-
-```json
-{
-  "type": "dbt:completed",
-  "results": [ /* per-test result arrays */ ],
-  "stats": [ /* per-test computed statistics */ ],
-  "shareUrl": "https://...",
-  "form": { "Age": "30" }
-}
-```
-
 With `postResults: false`:
 
 ```json
 { "type": "dbt:completed" }
 ```
 
-The `results` array contains one entry per test with the raw trial data. The `stats` array contains computed statistics (p-values, confusion matrices, etc.). The `shareUrl` is a self-contained URL that can render the results page without the parent.
+With `postResults: true`, the message includes `results`, `stats`, `shareUrl`, and `form`:
+
+```json
+{
+  "type": "dbt:completed",
+  "results": [ /* per-test iteration data — see below */ ],
+  "stats": [ /* per-test computed statistics (p-values, matrices, etc.) */ ],
+  "shareUrl": "https://...",
+  "form": { "Age": "30" }
+}
+```
+
+`shareUrl` is a self-contained URL that renders the results page without the parent.
+
+#### Results payload
+
+Each entry in the `results` array describes one test. The `options` map shows which position label (A, B, ...) corresponds to which config option name (the shuffled assignment for that test run). Iteration data uses `{ label, name }` objects so the consumer can use either.
+
+**ABX / ABXY / Triangle:**
+
+```json
+{
+  "name": "ABX: A vs B",
+  "testType": "ABX",
+  "options": { "A": "FLAC", "B": "MP3 320k" },
+  "iterations": [
+    {
+      "selected":      { "label": "B", "name": "MP3 320k" },
+      "correctAnswer": { "label": "A", "name": "FLAC" },
+      "isCorrect": false,
+      "confidence": "sure",
+      "durationMs": 4230
+    }
+  ]
+}
+```
+
+`confidence` is only present for `+C` variants (ABX+C, Triangle+C, etc.).
+
+**AB (preference):**
+
+```json
+{
+  "name": "Preference: A vs B",
+  "testType": "AB",
+  "options": { "A": "FLAC", "B": "MP3 320k" },
+  "iterations": [
+    {
+      "selected": { "label": "A", "name": "FLAC" },
+      "durationMs": 3100
+    }
+  ]
+}
+```
+
+No `correctAnswer` or `isCorrect` — preference tests have no right answer.
+
+**2AFC-SD (same/different):**
+
+```json
+{
+  "name": "Same or Different?",
+  "testType": "2AFC-SD",
+  "options": { "A": "FLAC", "B": "MP3 320k" },
+  "iterations": [
+    {
+      "response": "same",
+      "pairType": "different",
+      "isCorrect": false,
+      "confidence": "somewhat",
+      "durationMs": 5200
+    }
+  ]
+}
+```
+
+`response` is what the user chose, `pairType` is the actual pair composition.
+
+**2AFC-Staircase:**
+
+```json
+{
+  "name": "Threshold Test",
+  "testType": "2AFC-Staircase",
+  "options": { "A": "Reference", "B": "Level 1", "C": "Level 2" },
+  "iterations": [
+    { "level": 5, "correct": true, "durationMs": 2800 },
+    { "level": 5, "correct": true, "durationMs": 3100 },
+    { "level": 4, "correct": false, "durationMs": 2600 }
+  ],
+  "finalState": { /* adaptive algorithm state at convergence */ }
+}
+```
+
+`level` is the 1-based index into the non-reference options. `finalState` contains the full staircase algorithm state for custom threshold computation.
 
 ## Minimal Integration Example
 

@@ -19,6 +19,7 @@ import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
 import { createShareUrl } from '../utils/share';
 import { emitEvent } from '../utils/events';
+import { formatResultsForEmit } from '../utils/formatResults';
 import {
   createStaircaseState, createInterleavedState, getCurrentLevel,
   recordResponse, pickInterleavedTrack, recordInterleavedResponse,
@@ -118,7 +119,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   // Update crossfade config when test changes
   useEffect(() => {
     if (!engine) return;
-    engine.setCrossfadeForced(currentTest?.crossfade || false);
+    engine.setCrossfadeForced(currentTest?.crossfade ?? null);
     if (currentTest?.crossfadeDuration != null) {
       engine.setCrossfadeDuration(currentTest.crossfadeDuration / 1000);
     }
@@ -620,8 +621,8 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
         const resultData = result[entry.resultDataKey];
         return entry.computeStats(result.name, result.optionNames, resultData);
       });
-      const shareUrl = createShareUrl(allStats, config);
-      emitEvent('dbt:completed', { results, stats: allStats, shareUrl, form });
+      const shareUrl = createShareUrl(allStats, config, configUrl);
+      emitEvent('dbt:completed', { results: formatResultsForEmit(results), stats: allStats, shareUrl, form });
     } else {
       emitEvent('dbt:completed');
     }
@@ -695,6 +696,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
             description={config.results?.description}
             results={results}
             config={config}
+            configUrl={configUrl}
             onRestart={handleRestart}
           />
         </Container>
@@ -704,7 +706,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
   // Test screens
   const test = config.tests[testStep];
-  const crossfadeForced = currentTest?.crossfade || false;
+  const crossfadeForced = currentTest?.crossfade ?? null;
 
   const { entry, hasConfidence, baseType } = getTestType(test.testType);
   const TestComponent = entry.testComponent;

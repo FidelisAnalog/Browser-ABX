@@ -10,6 +10,7 @@ import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
 import { useHotkeys } from '../audio/useHotkeys';
+import { useHeardTracks } from '../audio/useHeardTracks';
 
 /**
  * @param {object} props
@@ -34,9 +35,11 @@ export default function ABTest({
 }) {
   const selectedTrack = useSelectedTrack(engine);
   const [answer, setAnswer] = useState(null);
+  const { heardTracks, markHeard } = useHeardTracks(options);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
+    markHeard(index);
     setAnswer(index);
   };
 
@@ -45,7 +48,7 @@ export default function ABTest({
     return String.fromCharCode(65 + answer);
   };
 
-  const canSubmit = answer !== null;
+  const canSubmit = answer !== null && heardTracks.size >= options.length;
 
   const handleSubmit = () => {
     if (!canSubmit) return;

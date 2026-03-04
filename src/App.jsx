@@ -82,7 +82,7 @@ const isEmbedded = window.parent !== window;
 export default function App() {
   const url = new URL(window.location.toString());
   const configUrl = url.searchParams.get('test');
-  const resultsParam = url.searchParams.get('results');
+  const shareParam = url.searchParams.get('share');
 
   // Theme mode: 'system' follows OS, 'light'/'dark' are manual overrides
   const [themeOverride, setThemeOverride] = useState('system');
@@ -156,9 +156,9 @@ export default function App() {
   }, []);
 
   let content;
-  if (configUrl && resultsParam) {
-    // Shared results view (works in iframe or standalone)
-    content = <SharedResults configUrl={configUrl} resultsParam={resultsParam} />;
+  if (shareParam) {
+    // Self-contained shared results view
+    content = <SharedResults shareParam={shareParam} />;
   } else if (configUrl) {
     // Standalone YAML config (works in iframe or standalone)
     content = <TestRunner configUrl={configUrl} />;

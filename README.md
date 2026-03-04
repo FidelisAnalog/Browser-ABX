@@ -139,7 +139,7 @@ Results break down accuracy by confidence level, helping distinguish lucky guess
 | `options` | Yes | — | Array of option names (must match defined options) |
 | `repeat` | No | `10` | Number of iterations |
 | `description` | No | — | Instructions shown during the test |
-| `crossfade` | No | `false` | Enable crossfade on track switches |
+| `crossfade` | No | *(user choice)* | `true` forces crossfade on, `false` forces it off, omit to let the user toggle |
 | `crossfadeDuration` | No | `5` | Crossfade duration in milliseconds |
 | `showProgress` | No | `false` | Show progress bar with per-iteration results |
 | `balanced` | No | `true` | 2AFC-SD only: use ITU-R blocked randomization |
@@ -407,13 +407,13 @@ Options sharing the same `tag` value have their results aggregated across tests.
 
 ## Sharing Results
 
-When a test is completed, results can be shared via URL. The result data is encoded as a compact base64url string (RFC 4648 §5) in the `results` query parameter:
+When a test is completed, results can be shared via URL. The entire payload — config metadata and result statistics — is encoded as a single self-contained base64url string (RFC 4648 §5) in the `share` query parameter:
 
 ```
-https://yourdomain.com/?test=<config-url>&results=<encoded>
+https://yourdomain.com/?share=<encoded>
 ```
 
-The encoded data contains aggregate statistics — not per-iteration details — except for staircase tests, which include trial-by-trial data so the convergence plot renders from the share URL. Recipients can view the results by opening the link; DBT loads the config, decodes the results, and displays the statistics. No server is required.
+The encoded data includes the test name, options, test definitions, and aggregate statistics. Staircase tests also include trial-by-trial data so the convergence plot renders from the share URL. If the original config URL is available, it is embedded in the payload; when the recipient opens the link, a "Take the Test" button appears if that config URL is still reachable. No server or external config file is required — share URLs are fully self-contained.
 
 ## Keyboard Shortcuts
 
