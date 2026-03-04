@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Button } from '@mui/material';
+import { Button, useTheme } from '@mui/material';
 
 /**
  * @param {object} props
@@ -25,6 +25,7 @@ export default function CircleButton({
   ...rest
 }) {
   const isBlack = color === 'black';
+  const theme = useTheme();
 
   return (
     <Button
@@ -43,9 +44,9 @@ export default function CircleButton({
         fontSize: '1.2rem',
         fontWeight: 'bold',
         ...(isBlack && {
-          backgroundColor: '#424242',
-          color: '#fff',
-          '&:hover': { backgroundColor: '#616161' },
+          backgroundColor: theme.palette.track.main,
+          color: theme.palette.track.contrastText,
+          '&:hover': { backgroundColor: theme.palette.track.hover },
         }),
       }}
       {...rest}

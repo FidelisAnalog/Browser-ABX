@@ -7,8 +7,8 @@
  */
 
 import React, { useRef, useEffect } from 'react';
+import { useTheme } from '@mui/material';
 
-const PLAYHEAD_COLOR = '#d32f2f';
 const PLAYHEAD_WIDTH = 1.5;
 
 /**
@@ -18,6 +18,7 @@ const PLAYHEAD_WIDTH = 1.5;
  * @param {number} props.height - Height of the waveform area
  */
 export default function Playhead({ timeRef, timeToX, height }) {
+  const theme = useTheme();
   const lineRef = useRef(null);
   const rafRef = useRef(null);
   // Cache timeToX in a ref so the rAF loop always uses the latest without restarting
@@ -51,7 +52,7 @@ export default function Playhead({ timeRef, timeToX, height }) {
       y1={0}
       x2={0}
       y2={height}
-      stroke={PLAYHEAD_COLOR}
+      stroke={theme.palette.waveform.playhead}
       strokeWidth={PLAYHEAD_WIDTH}
       pointerEvents="none"
     />

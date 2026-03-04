@@ -5,10 +5,7 @@
  */
 
 import React, { useMemo } from 'react';
-
-const TICK_COLOR = '#757575';
-const TEXT_COLOR = '#616161';
-const BG_COLOR = '#eeeeee';
+import { useTheme } from '@mui/material';
 const FONT_SIZE = 10;
 
 /**
@@ -55,6 +52,7 @@ function chooseInterval(visibleDuration, width) {
  * @param {number} props.height - Height of timeline area
  */
 export default function Timeline({ viewStart, viewEnd, duration, width, y, height }) {
+  const theme = useTheme();
   const ticks = useMemo(() => {
     const visibleDuration = viewEnd - viewStart;
     if (visibleDuration <= 0 || width <= 0) return [];
@@ -83,7 +81,7 @@ export default function Timeline({ viewStart, viewEnd, duration, width, y, heigh
   return (
     <g>
       {/* Background */}
-      <rect x={0} y={y} width={width} height={height} fill={BG_COLOR} />
+      <rect x={0} y={y} width={width} height={height} fill={theme.palette.waveform.timelineBackground} />
 
       {/* Ticks and labels */}
       {ticks.map((tick, i) => (
@@ -93,13 +91,13 @@ export default function Timeline({ viewStart, viewEnd, duration, width, y, heigh
             y1={y}
             x2={tick.x}
             y2={y + 5}
-            stroke={TICK_COLOR}
+            stroke={theme.palette.waveform.timelineTick}
             strokeWidth={1}
           />
           <text
             x={tick.x + 3}
             y={y + height - 3}
-            fill={TEXT_COLOR}
+            fill={theme.palette.waveform.timelineText}
             fontSize={FONT_SIZE}
             fontFamily="monospace"
           >

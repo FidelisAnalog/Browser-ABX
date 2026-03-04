@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Box, Button, Container, Divider, Paper, Typography } from '@mui/material';
+import { Box, Button, Container, Divider, Paper, Typography, useTheme } from '@mui/material';
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
@@ -52,6 +52,7 @@ export default function StaircaseTest({
   onSubmit,
 }) {
   const trackCount = 2;
+  const theme = useTheme();
   const selectedTrack = useSelectedTrack(engine);
   const [answer, setAnswer] = useState(null);
 
@@ -79,7 +80,7 @@ export default function StaircaseTest({
   useHotkeys({ engine, trackCount, onTrackSelect: handleTrackSelect, onSubmit: handleSubmit });
 
   return (
-    <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
+    <Box sx={{ minHeight: '100vh' }} pt={2} pb={2}>
       <Container maxWidth="md">
         <Box display="flex" flexDirection="column" gap={1.5}>
           {/* Test info */}
@@ -163,8 +164,8 @@ export default function StaircaseTest({
                       height: 6,
                       borderRadius: 1,
                       backgroundColor: i < trialHistory.length
-                        ? (trialHistory[i].isCorrect ? '#66bb6a' : '#ef5350')
-                        : '#e0e0e0',
+                        ? (trialHistory[i].isCorrect ? theme.palette.success.light : theme.palette.error.light)
+                        : theme.palette.progress.pending,
                     }}
                   />
                 ))}

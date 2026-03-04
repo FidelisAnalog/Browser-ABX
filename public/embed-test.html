@@ -22,6 +22,8 @@
     .checkboxes label { font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; }
     .btn { padding: 6px 20px; background: #1976d2; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
     .btn:hover { background: #1565c0; }
+    .btn-sm { padding: 4px 12px; font-size: 0.8rem; }
+    select { padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; cursor: pointer; }
 
     /* Iframe */
     .iframe-section { height: 700px; position: relative; margin: 0 16px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: #fff; }
@@ -88,7 +90,16 @@
         <label><input type="checkbox" id="skipWelcome"> skipWelcome</label>
         <label><input type="checkbox" id="skipResults"> skipResults</label>
       </div>
+      <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px;">
+        Theme:
+        <select id="themeSelect">
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
       <button class="btn" onclick="launchTest()">Send Config</button>
+      <button class="btn btn-sm" onclick="sendTheme()">Send Theme</button>
     </div>
 
     <!-- Iframe -->
@@ -125,10 +136,12 @@
         return;
       }
 
+      const themeVal = document.getElementById('themeSelect').value;
       const options = {
         postResults: document.getElementById('postResults').checked,
         skipWelcome: document.getElementById('skipWelcome').checked,
         skipResults: document.getElementById('skipResults').checked,
+        theme: themeVal,
       };
 
       const container = document.getElementById('iframeContainer');
@@ -139,7 +152,7 @@
       if (placeholder) placeholder.remove();
 
       iframe = document.createElement('iframe');
-      iframe.src = 'https://code.myhi.fi/Browser-ABX/';
+      iframe.src = './';
       container.appendChild(iframe);
 
       const readyHandler = (e) => {
@@ -156,6 +169,16 @@
       window.addEventListener('message', readyHandler);
 
       logEvent({ type: 'parent:info', message: 'Iframe created, waiting for dbt:ready...' });
+    }
+
+    function sendTheme() {
+      if (!iframe) {
+        logEvent({ type: 'parent:error', message: 'No iframe — send config first' });
+        return;
+      }
+      const theme = document.getElementById('themeSelect').value;
+      iframe.contentWindow.postMessage({ type: 'dbt:theme', theme }, '*');
+      logEvent({ type: 'parent:sent', message: 'Theme sent: ' + theme });
     }
 
     function logEvent(data) {
