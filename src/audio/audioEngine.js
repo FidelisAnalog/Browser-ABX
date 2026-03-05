@@ -613,6 +613,8 @@ export class AudioEngine {
     clearTimeout(this._volumePersistTimer);
     clearTimeout(this._pendingCrossfadeCleanup);
     this._subscribers.clear();
+    this._gainNode.gain.value = 0;
+    this._gainNode.disconnect();
     this._context.close();
   }
 
