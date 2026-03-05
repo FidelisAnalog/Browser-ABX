@@ -36,7 +36,8 @@ export class AudioEngine {
 
     // Prevent bfcache — ensures the page (and AudioContext) is fully destroyed
     // on navigation rather than cached in a half-alive state that leaks audio.
-    window.addEventListener('unload', () => {});
+    window.addEventListener('unload', () => {}); // Chrome
+    new BroadcastChannel('acidtest-bfcache').addEventListener('message', () => {}); // Safari
 
     // Gain node for volume control
     this._gainNode = this._context.createGain();
