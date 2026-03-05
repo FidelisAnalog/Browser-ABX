@@ -1,10 +1,10 @@
-# DBT
+# acidtest.io
 
-Double-blind audio listening tests in your browser.
+Audio listening tests in your browser.
 
-[Live instance](https://fidelisanalog.github.io/Browser-ABX/) · [License](LICENSE)
+[Live instance](https://acidtest.io/) · [License](LICENSE)
 
-DBT is a static site — host it anywhere: GitHub Pages, Vercel, Netlify, or any static file server.
+acidtest.io is a static site — host it anywhere: GitHub Pages, Vercel, Netlify, or any static file server.
 
 ## Features
 
