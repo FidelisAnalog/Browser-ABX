@@ -37,7 +37,18 @@ export class AudioEngine {
     // Prevent bfcache — ensures the page (and AudioContext) is fully destroyed
     // on navigation rather than cached in a half-alive state that leaks audio.
     window.addEventListener('unload', () => {}); // Chrome
-    new BroadcastChannel('acidtest-bfcache').addEventListener('message', () => {}); // Safari
+    // Safari ignores unload listeners. Flush the audio pipeline with silence
+    // on navigation so any leaked samples from bfcache eviction are inaudible.
+    window.addEventListener('pagehide', () => {
+      if (this._activeSource) {
+        try { this._activeSource.stop(); } catch {}
+        try { this._activeSource.disconnect(); } catch {}
+      }
+      const silent = this._context.createBufferSource();
+      silent.buffer = this._context.createBuffer(1, 1, this._context.sampleRate);
+      silent.connect(this._context.destination);
+      silent.start();
+    });
 
     // Gain node for volume control
     this._gainNode = this._context.createGain();
