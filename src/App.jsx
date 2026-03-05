@@ -5,6 +5,7 @@ import SharedResults from './components/SharedResults';
 import LandingPage from './components/LandingPage';
 import { normalizeConfig } from './utils/config';
 import { emitEvent } from './utils/events';
+import { isEmbedded } from './utils/embed';
 
 /** Shared palette values that work on both light and dark backgrounds */
 const shared = {
@@ -76,9 +77,6 @@ const DEFAULT_EMBED_OPTIONS = {
   skipResults: false,
 };
 
-/** True when running inside an iframe */
-const isEmbedded = window.parent !== window;
-
 export default function App() {
   const url = new URL(window.location.toString());
   const configUrl = url.searchParams.get('test');
@@ -115,29 +113,33 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Embed state — config received via postMessage from parent iframe
-  const [embeddedConfig, setEmbeddedConfig] = useState(null);
-  const [embedOptions, setEmbedOptions] = useState(DEFAULT_EMBED_OPTIONS);
-  const [embedError, setEmbedError] = useState(null);
+  // Current screen reported by TestRunner (loading, welcome, test, results)
+  const [screen, setScreen] = useState(null);
 
-  // When embedded in an iframe, listen for config and theme messages from parent
+  // postMessage state — config received via postMessage from parent/opener
+  const [postMessageConfig, setPostMessageConfig] = useState(null);
+  const [postMessageOptions, setPostMessageOptions] = useState(DEFAULT_EMBED_OPTIONS);
+  const [postMessageError, setPostMessageError] = useState(null);
+
+  // When no URL config, listen for config and theme messages via postMessage
+  const needsPostMessage = !configUrl && !shareParam;
   useEffect(() => {
-    if (!isEmbedded) return;
+    if (!needsPostMessage) return;
 
     const handler = (e) => {
       if (e.data?.type === 'acidtest:config') {
         try {
           const normalized = normalizeConfig(e.data.config);
           const opts = { ...DEFAULT_EMBED_OPTIONS, ...e.data.options };
-          setEmbeddedConfig(normalized);
-          setEmbedOptions(opts);
+          setPostMessageConfig(normalized);
+          setPostMessageOptions(opts);
           // Apply initial theme override if provided
           const t = opts.theme;
           if (t === 'light' || t === 'dark' || t === 'system') {
             setThemeOverride(t);
           }
         } catch (err) {
-          setEmbedError(err.message);
+          setPostMessageError(err.message);
           emitEvent('acidtest:error', { error: err.message });
         }
       } else if (e.data?.type === 'acidtest:theme') {
@@ -161,31 +163,25 @@ export default function App() {
     content = <SharedResults shareParam={shareParam} />;
   } else if (configUrl) {
     // Standalone YAML config (works in iframe or standalone)
-    content = <TestRunner configUrl={configUrl} />;
-  } else if (isEmbedded) {
-    // In iframe with no URL params — wait for postMessage config
-    if (embedError) {
-      content = (
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh" p={3}>
-          <Typography color="error">{embedError}</Typography>
-        </Box>
-      );
-    } else if (!embeddedConfig) {
-      content = (
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-          <CircularProgress />
-        </Box>
-      );
-    } else {
-      content = (
-        <TestRunner
-          config={embeddedConfig}
-          postResults={embedOptions.postResults}
-          skipWelcome={embedOptions.skipWelcome}
-          skipResults={embedOptions.skipResults}
-        />
-      );
-    }
+    content = <TestRunner configUrl={configUrl} onScreen={setScreen} />;
+  } else if (postMessageError) {
+    // postMessage config failed
+    content = (
+      <Box display="flex" justifyContent="center" alignItems="center" p={3}>
+        <Typography color="error">{postMessageError}</Typography>
+      </Box>
+    );
+  } else if (postMessageConfig) {
+    // Config received via postMessage
+    content = (
+      <TestRunner
+        config={postMessageConfig}
+        postResults={postMessageOptions.postResults}
+        skipWelcome={postMessageOptions.skipWelcome}
+        skipResults={postMessageOptions.skipResults}
+        onScreen={setScreen}
+      />
+    );
   } else {
     content = <LandingPage />;
   }
@@ -194,7 +190,7 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       {content}
-      {isEmbedded && (
+      {isEmbedded && screen === 'test' && (
         <Box textAlign="center" mt={-2} pb={0.5}>
           <Typography variant="caption" color="text.secondary">
             powered by{' '}

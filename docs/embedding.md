@@ -4,11 +4,17 @@ Browser-ABX can be embedded in an iframe and controlled entirely via `postMessag
 
 ## Hosting
 
-Build the SPA (`npm run build`) and host the contents of `dist/` on your own server. The embed page loads the app in an iframe pointed at your hosted copy.
+Point your iframe at `https://acidtest.io`. There is no need to self-host the SPA.
+
+| URL | Purpose |
+|---|---|
+| `https://acidtest.io` | Production |
+| `https://acidtest.io/test` | Staging / internal testing |
+| `https://acidtest.io/preview` | Preview builds for external review |
 
 ## Handshake
 
-1. Parent creates an iframe pointing at the hosted app (no query params)
+1. Parent creates an iframe pointing at `https://acidtest.io` (no query params)
 2. App detects it's inside an iframe (`window.parent !== window`)
 3. App posts `acidtest:ready` to parent
 4. Parent receives `acidtest:ready`, posts `acidtest:config` with the test config and options
@@ -308,7 +314,7 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
 <html>
 <head><title>My Test</title></head>
 <body>
-  <iframe id="testFrame" src="https://your-host.com/path-to-app/" style="width:100%;height:80vh;border:none;"></iframe>
+  <iframe id="testFrame" src="https://acidtest.io/" style="width:100%;height:80vh;border:none;"></iframe>
   <script>
     const config = {
       name: "Quick Test",
@@ -353,7 +359,7 @@ The app does not track abandonment directly. The parent should monitor `acidtest
 
 A full test harness with config editor, option checkboxes, and event log is included in the build:
 
-**Live:** [embed-test.html](https://code.myhi.fi/Browser-ABX/embed-test.html)
+**Live:** [embed-test.html](https://acidtest.io/embed-test.html)
 
 Source: `public/embed-test.html`
 

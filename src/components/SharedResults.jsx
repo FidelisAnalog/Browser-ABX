@@ -7,6 +7,7 @@ import { Box, Button, Container, Link, Typography } from '@mui/material';
 import { decodeShareParam } from '../utils/share';
 import { rawLink } from '../utils/config';
 import Results from './Results';
+import { isEmbedded } from '../utils/embed';
 
 /**
  * @param {object} props
@@ -40,7 +41,7 @@ export default function SharedResults({ shareParam }) {
 
   if (error) {
     return (
-      <Box sx={{ minHeight: '100vh' }} pt={4}>
+      <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={4}>
         <Container maxWidth="md">
           <Typography color="error" variant="h6">Error</Typography>
           <Typography>{error}</Typography>
@@ -50,7 +51,7 @@ export default function SharedResults({ shareParam }) {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh' }} pt={2} pb={2}>
+    <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={2} pb={2}>
       <Container maxWidth="md">
         <Results
           description={null}

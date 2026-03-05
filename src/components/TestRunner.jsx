@@ -19,6 +19,7 @@ import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
 import { createShareUrl } from '../utils/share';
 import { emitEvent } from '../utils/events';
+import { isEmbedded } from '../utils/embed';
 import { formatResultsForEmit } from '../utils/formatResults';
 import {
   createStaircaseState, createInterleavedState, getCurrentLevel,
@@ -37,7 +38,7 @@ import SampleRateInfo from './SampleRateInfo';
  * @param {boolean} [props.skipWelcome] - Skip welcome screen, auto-start when audio ready
  * @param {boolean} [props.skipResults] - Skip results screen, show minimal completion state
  */
-export default function TestRunner({ configUrl, config: configProp, postResults = true, skipWelcome = false, skipResults = false }) {
+export default function TestRunner({ configUrl, config: configProp, postResults = true, skipWelcome = false, skipResults = false, onScreen }) {
   const [config, setConfig] = useState(null);
   const [configError, setConfigError] = useState(null);
 
@@ -628,11 +629,18 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     }
   }, [config, testStep, postResults, results, form]);
 
+  // Report current screen to parent
+  const screen = !config ? 'loading'
+    : testStep === -1 ? (skipWelcome ? 'loading' : 'welcome')
+    : testStep >= (config?.tests?.length ?? 0) ? 'results'
+    : 'test';
+  useEffect(() => { onScreen?.(screen); }, [screen, onScreen]);
+
   // --- Render ---
 
   if (configError) {
     return (
-      <Box sx={{ minHeight: '100vh' }} pt={4}>
+      <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={4}>
         <Container maxWidth="md">
           <Typography color="error" variant="h6">Error</Typography>
           <Typography>{configError}</Typography>
@@ -643,7 +651,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
   if (!config) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight={isEmbedded ? undefined : '100vh'}>
         <CircularProgress />
       </Box>
     );
@@ -653,7 +661,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   if (testStep === -1) {
     if (skipWelcome) {
       return (
-        <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" minHeight="100vh" gap={2}>
+        <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" minHeight={isEmbedded ? '700px' : '100vh'} gap={2}>
           <CircularProgress />
           {loadProgress.total > 0 && (
             <Typography variant="body2" color="text.secondary">
@@ -684,13 +692,13 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   if (testStep >= config.tests.length) {
     if (skipResults) {
       return (
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight={isEmbedded ? undefined : '100vh'}>
           <Typography variant="h6" color="text.secondary">Test complete</Typography>
         </Box>
       );
     }
     return (
-      <Box sx={{ minHeight: '100vh' }} pt={2} pb={2}>
+      <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={2} pb={2}>
         <Container maxWidth="md">
           <Results
             description={config.results?.description}

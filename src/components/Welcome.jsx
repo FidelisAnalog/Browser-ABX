@@ -8,6 +8,7 @@ import {
   TextField, Typography,
 } from '@mui/material';
 import ReactMarkdown from 'react-markdown';
+import { isEmbedded } from '../utils/embed';
 
 /**
  * @param {object} props
@@ -42,7 +43,7 @@ export default function Welcome({ description, form, initialized, onStart }) {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh' }} pt={2} pb={2}>
+    <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={2} pb={2}>
       <Container maxWidth="md">
         <Paper>
           <Box p={3}>
