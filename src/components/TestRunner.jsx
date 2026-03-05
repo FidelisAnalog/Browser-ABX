@@ -657,6 +657,13 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   }
 
   if (!config) {
+    if (skipWelcome) {
+      return (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight={isEmbedded ? '700px' : '100vh'}>
+          <CircularProgress />
+        </Box>
+      );
+    }
     return null;
   }
 
