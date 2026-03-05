@@ -68,7 +68,16 @@ const getSystemMode = () =>
   window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 
 const buildTheme = (mode) =>
-  createTheme({ palette: mode === 'dark' ? darkPalette : lightPalette });
+  createTheme({
+    palette: mode === 'dark' ? darkPalette : lightPalette,
+    ...(isEmbedded && {
+      components: {
+        MuiContainer: {
+          defaultProps: { disableGutters: true },
+        },
+      },
+    }),
+  });
 
 /** Default embed options */
 const DEFAULT_EMBED_OPTIONS = {
