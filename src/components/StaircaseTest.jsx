@@ -83,7 +83,7 @@ export default function StaircaseTest({
   useHotkeys({ engine, trackCount, onTrackSelect: handleTrackSelect, onSubmit: handleSubmit });
 
   return (
-    <Box sx={{ minHeight: '100vh' }} pt={2} pb={2}>
+    <Box pt={2} pb={2}>
       <Container maxWidth="md">
         <Box display="flex" flexDirection="column" gap={1.5}>
           {/* Test info */}
