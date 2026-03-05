@@ -34,6 +34,10 @@ export class AudioEngine {
     this._context = new AudioContext({ sampleRate, latencyHint: 'interactive' });
     this._contextRate = this._context.sampleRate;
 
+    // Prevent bfcache — ensures the page (and AudioContext) is fully destroyed
+    // on navigation rather than cached in a half-alive state that leaks audio.
+    window.addEventListener('unload', () => {});
+
     // Gain node for volume control
     this._gainNode = this._context.createGain();
     this._gainNode.connect(this._context.destination);
@@ -613,8 +617,6 @@ export class AudioEngine {
     clearTimeout(this._volumePersistTimer);
     clearTimeout(this._pendingCrossfadeCleanup);
     this._subscribers.clear();
-    this._gainNode.gain.value = 0;
-    this._gainNode.disconnect();
     this._context.close();
   }
 
