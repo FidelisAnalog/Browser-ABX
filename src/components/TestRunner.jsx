@@ -107,13 +107,20 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   }
   const engine = engineRef.current;
 
-  // Cleanup engine on unmount
+  // Cleanup engine on unmount (SPA navigation) and on page unload (full navigation).
+  // React useEffect cleanup does NOT fire on full page navigation, so pagehide
+  // is needed to ensure the AudioContext is closed and the audio thread stops.
   useEffect(() => {
-    return () => {
+    const cleanup = () => {
       if (engineRef.current) {
         engineRef.current.destroy();
         engineRef.current = null;
       }
+    };
+    window.addEventListener('pagehide', cleanup);
+    return () => {
+      window.removeEventListener('pagehide', cleanup);
+      cleanup();
     };
   }, []);
 
@@ -650,11 +657,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   }
 
   if (!config) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight={isEmbedded ? undefined : '100vh'}>
-        <CircularProgress />
-      </Box>
-    );
+    return null;
   }
 
   // Welcome screen (or loading indicator when skipWelcome)
