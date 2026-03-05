@@ -12,6 +12,21 @@ Point your iframe at `https://acidtest.io`. There is no need to self-host the SP
 | `https://acidtest.io/test` | Staging / internal testing |
 | `https://acidtest.io/preview` | Preview builds for external review |
 
+## iframe Styling
+
+```html
+<iframe src="https://acidtest.io/" scrolling="no"
+  style="border:none; width:100%; height:auto; min-height:825px;"></iframe>
+```
+
+| Property | Why |
+|---|---|
+| `border:none` | Removes the default iframe border. |
+| `scrolling="no"` | Prevents a scrollbar inside the iframe. The parent page's scrollbar handles everything. |
+| `height:auto; min-height:825px` | `height:auto` prevents the iframe from stretching beyond the content (no gap below). `min-height:825px` ensures enough room for the tallest test screen. |
+
+For a seamless appearance, set the iframe's `background` to match your page background. Our dark theme uses `#121212` and light theme uses `#fff`.
+
 ## Handshake
 
 1. Parent creates an iframe pointing at `https://acidtest.io` (no query params)
@@ -314,7 +329,8 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
 <html>
 <head><title>My Test</title></head>
 <body>
-  <iframe id="testFrame" src="https://acidtest.io/" style="width:100%;height:80vh;border:none;"></iframe>
+  <iframe id="testFrame" src="https://acidtest.io/" scrolling="no"
+    style="border:none; width:100%; height:auto; min-height:825px;"></iframe>
   <script>
     const config = {
       name: "Quick Test",
