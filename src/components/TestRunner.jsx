@@ -1,6 +1,6 @@
 /**
  * TestRunner — main test orchestrator.
- * Handles config loading, audio initialization, test sequencing, and results collection.
+ * Handles audio initialization, test sequencing, and results collection.
  *
  * Audio lifecycle:
  * 1. Parse config → collect all unique audio URLs
@@ -12,8 +12,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Box, CircularProgress, Container, Typography } from '@mui/material';
-import { parseConfig } from '../utils/config';
 import { loadAndValidate, createAudioBufferMap } from '../audio/audioLoader';
+import { useConfig } from '../hooks/useConfig';
 import { AudioEngine } from '../audio/audioEngine';
 import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
@@ -39,8 +39,8 @@ import SampleRateInfo from './SampleRateInfo';
  * @param {boolean} [props.skipResults] - Skip results screen, show minimal completion state
  */
 export default function TestRunner({ configUrl, config: configProp, postResults = true, skipWelcome = false, skipResults = false, onScreen }) {
-  const [config, setConfig] = useState(null);
-  const [configError, setConfigError] = useState(null);
+  const { config, configError } = useConfig(configUrl, configProp);
+  const [audioError, setAudioError] = useState(null);
 
   // Decoded audio cache: Map<url, DecodedAudio>
   const decodedCacheRef = useRef(new Map());
@@ -136,9 +136,8 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   // Track whether acidtest:completed has been emitted (prevent duplicates on re-render)
   const completedEmittedRef = useRef(false);
 
-  /** Initialize results array from a config object. */
+  /** Initialize results array when config is loaded. */
   const initResults = useCallback((cfg) => {
-    setConfig(cfg);
     setResults(
       cfg.tests.map((test) => {
         const { entry } = getTestType(test.testType);
@@ -153,25 +152,10 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     );
   }, []);
 
-  // Load config — from prop (embed mode) or URL (standalone mode)
+  // Initialize results when config becomes available
   useEffect(() => {
-    if (configProp) {
-      // Embed mode: config already normalized by App.jsx
-      initResults(configProp);
-      return;
-    }
-    if (!configUrl) return;
-    let cancelled = false;
-    parseConfig(configUrl)
-      .then((cfg) => {
-        if (cancelled) return;
-        initResults(cfg);
-      })
-      .catch((err) => {
-        if (!cancelled) setConfigError(err.message);
-      });
-    return () => { cancelled = true; };
-  }, [configUrl, configProp, initResults]);
+    if (config) initResults(config);
+  }, [config, initResults]);
 
   // Collect all unique audio URLs from config
   const audioUrls = useMemo(() => {
@@ -207,7 +191,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
       })
       .catch((err) => {
         if (err.name === 'AbortError') return; // Unmount — ignore
-        if (!controller.signal.aborted) setConfigError(err.message);
+        if (!controller.signal.aborted) setAudioError(err.message);
       });
     return () => { controller.abort(); };
   }, [audioUrls]);
@@ -645,12 +629,13 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
   // --- Render ---
 
-  if (configError) {
+  const error = configError || audioError;
+  if (error) {
     return (
       <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={4}>
         <Container maxWidth="md">
           <Typography color="error" variant="h6">Error</Typography>
-          <Typography>{configError}</Typography>
+          <Typography>{error}</Typography>
         </Container>
       </Box>
     );
