@@ -20,46 +20,44 @@ import { useHeardTracks } from '../audio/useHeardTracks';
  * @param {string} props.name - Test name
  * @param {string} [props.description] - Test instructions
  * @param {string} props.stepStr - e.g., "Trial 5"
- * @param {object[]} props.pair - 2 audio option objects [trackA, trackB]
- * @param {number} props.referenceIdx - Which index in pair is the reference (0 or 1)
  * @param {number} props.testLevel - Current staircase level (1-based)
  * @param {number} props.reversalCount - Current reversal count
  * @param {number} props.targetReversals - Target reversal count
- * @param {object[]} props.trialHistory - Array of { isCorrect } for progress bar
+ * @param {object[]} props.progressDots - Array of {isCorrect, confidence} for progress bar
  * @param {number} [props.minRemaining=1] - Best-case minimum remaining trials (from staircase algorithm)
  * @param {boolean} [props.familiarizing=false] - True during free-listen familiarization phase
  * @param {string[]} [props.pairNames] - Option names for A and B during familiarization
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform
  * @param {boolean} props.crossfadeForced
- * @param {(selectedIdx: number) => void} props.onSubmit - Called with the user's selected track index
+ * @param {number} props.iterationKey - Counter for state resets between iterations
+ * @param {(answerId: string|null, confidence: null) => void} props.onSubmit
  */
 export default function StaircaseTest({
   name,
   description,
   stepStr,
-  pair,
-  referenceIdx,
   testLevel,
   reversalCount,
   targetReversals,
-  trialHistory = [],
+  progressDots = [],
   minRemaining = 1,
   familiarizing = false,
   pairNames,
   engine,
   channelData,
   crossfadeForced,
+  iterationKey,
   onSubmit,
 }) {
   const trackCount = 2;
   const theme = useTheme();
   const selectedTrack = useSelectedTrack(engine);
   const [answer, setAnswer] = useState(null);
-  const { heardTracks, markHeard } = useHeardTracks(pair);
+  const { heardTracks, markHeard } = useHeardTracks(iterationKey);
 
-  // Reset answer when pair changes (new trial)
-  useEffect(() => { setAnswer(null); }, [pair]);
+  // Reset answer on new trial
+  useEffect(() => { setAnswer(null); }, [iterationKey]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
@@ -77,7 +75,7 @@ export default function StaircaseTest({
   const handleSubmit = () => {
     if (!canSubmit) return;
     engine?.stop();
-    onSubmit(familiarizing ? null : answer);
+    onSubmit(familiarizing ? null : String(answer), null);
   };
 
   useHotkeys({ engine, trackCount, onTrackSelect: handleTrackSelect, onSubmit: handleSubmit });
@@ -159,15 +157,15 @@ export default function StaircaseTest({
                 gap="3px"
                 sx={{ px: 2.5, pb: 1.5 }}
               >
-                {Array.from({ length: Math.max(7, trialHistory.length + Math.max(1, minRemaining)) }, (_, i) => (
+                {Array.from({ length: Math.max(7, progressDots.length + Math.max(1, minRemaining)) }, (_, i) => (
                   <Box
                     key={i}
                     sx={{
                       flex: 1,
                       height: 6,
                       borderRadius: 1,
-                      backgroundColor: i < trialHistory.length
-                        ? (trialHistory[i].isCorrect ? theme.palette.success.light : theme.palette.error.light)
+                      backgroundColor: i < progressDots.length
+                        ? (progressDots[i].isCorrect ? theme.palette.success.light : theme.palette.error.light)
                         : theme.palette.progress.pending,
                     }}
                   />

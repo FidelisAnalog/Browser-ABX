@@ -21,30 +21,28 @@ import { useHeardTracks } from '../audio/useHeardTracks';
  * @param {string} props.name - Test name
  * @param {string} [props.description] - Test instructions
  * @param {string} props.stepStr - e.g., "3/10"
- * @param {object[]} props.triplet - 3 option objects in randomized order (2 identical, 1 different)
- * @param {object} props.correctOption - The odd-one-out option
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform
  * @param {boolean} props.crossfadeForced
  * @param {number} props.totalIterations - Total number of iterations for this test
- * @param {object[]} props.iterationResults - Array of completed iteration results
+ * @param {object[]} props.progressDots - Array of {isCorrect, confidence} for completed iterations
  * @param {boolean} [props.showConfidence] - Whether to show confidence selection (Triangle+C)
  * @param {boolean} [props.showProgress] - Whether to show iteration progress bar
- * @param {(selectedOption: object, correctOption: object, confidence: string|null) => void} props.onSubmit
+ * @param {number} props.iterationKey - Counter for state resets between iterations
+ * @param {(answerId: string, confidence: string|null) => void} props.onSubmit
  */
 export default function TriangleTest({
   name,
   description,
   stepStr,
-  triplet,
-  correctOption,
   engine,
   channelData,
   crossfadeForced,
   totalIterations,
-  iterationResults = [],
+  progressDots = [],
   showConfidence = false,
   showProgress = false,
+  iterationKey,
   onSubmit,
 }) {
   const trackCount = 3;
@@ -53,10 +51,10 @@ export default function TriangleTest({
 
   const [answer, setAnswer] = useState(null);
   const [pendingSubmit, setPendingSubmit] = useState(false);
-  const { heardTracks, markHeard } = useHeardTracks(triplet);
+  const { heardTracks, markHeard } = useHeardTracks(iterationKey);
 
-  // Reset state when triplet changes (new iteration)
-  useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [triplet]);
+  // Reset state on new iteration
+  useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [iterationKey]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
@@ -76,13 +74,13 @@ export default function TriangleTest({
       setPendingSubmit(true);
     } else {
       engine?.stop();
-      onSubmit(triplet[answer], correctOption, null);
+      onSubmit(String(answer), null);
     }
   };
 
   const handleConfidenceClick = (confidence) => {
     engine?.stop();
-    onSubmit(triplet[answer], correctOption, confidence);
+    onSubmit(String(answer), confidence);
   };
 
   const canSubmit = answer !== null && heardTracks.size >= trackCount;
@@ -182,15 +180,14 @@ export default function TriangleTest({
               >
                 {Array.from({ length: totalIterations }, (_, i) => {
                   let color = theme.palette.progress.pending;
-                  if (i < iterationResults.length) {
-                    const r = iterationResults[i];
-                    const correct = r.selectedOption.audioUrl === r.correctOption.audioUrl;
-                    if (r.confidence === 'sure') {
-                      color = correct ? theme.palette.success.dark : theme.palette.error.dark;
-                    } else if (r.confidence === 'somewhat') {
-                      color = correct ? theme.palette.success.main : theme.palette.error.main;
+                  if (i < progressDots.length) {
+                    const d = progressDots[i];
+                    if (d.confidence === 'sure') {
+                      color = d.isCorrect ? theme.palette.success.dark : theme.palette.error.dark;
+                    } else if (d.confidence === 'somewhat') {
+                      color = d.isCorrect ? theme.palette.success.main : theme.palette.error.main;
                     } else {
-                      color = correct ? theme.palette.success.light : theme.palette.error.light;
+                      color = d.isCorrect ? theme.palette.success.light : theme.palette.error.light;
                     }
                   }
                   return (

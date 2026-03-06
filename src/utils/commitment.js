@@ -71,3 +71,16 @@ export async function createCommitment(correctAnswerId, allAnswerIds) {
 export function verifyAnswer(answerHashes, selectedId, correctHash) {
   return answerHashes.get(selectedId) === correctHash;
 }
+
+/**
+ * Derive the correct answer ID from a commitment (post-submission only).
+ * @param {Map<string,string>} answerHashes
+ * @param {string} correctHash
+ * @returns {string|null}
+ */
+export function deriveCorrectId(answerHashes, correctHash) {
+  for (const [id, hash] of answerHashes) {
+    if (hash === correctHash) return id;
+  }
+  return null;
+}
