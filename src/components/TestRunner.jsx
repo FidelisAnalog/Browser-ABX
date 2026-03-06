@@ -74,7 +74,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   const shuffledOptionsRef = useRef([]);
 
   // Per-iteration type-specific state (populated by setupIteration, read during render).
-  // Anti-cheat: this ref contains ONLY opaque hashes and non-answer-revealing data.
+  // Anti-cheat: NO commitment/hash data here — only non-answer metadata (testLevel, etc.).
   const iterationStateRef = useRef({});
   // Re-render trigger for iteration state changes (ref updates don't cause re-renders)
   const [, setIterationVersion] = useState(0);
@@ -319,16 +319,16 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
       const allAnswerIds = ordered.map((_, i) => String(i));
       const commitment = await createCommitment(String(randomIndex), allAnswerIds);
-      _iterationMeta = { correctIndex: randomIndex };
+      _iterationMeta = { correctIndex: randomIndex, commitment };
 
       if (baseType === 'abxy') {
         const otherIndex = randomIndex === 0 ? 1 : 0;
         const otherOption = ordered[otherIndex];
         const yOpt = { name: 'Y', audioUrl: otherOption.audioUrl };
-        iterationStateRef.current = { commitment };
+        iterationStateRef.current = {};
         bufferSources = [...ordered, xOpt, yOpt];
       } else {
-        iterationStateRef.current = { commitment };
+        iterationStateRef.current = {};
         bufferSources = [...ordered, xOpt];
       }
     } else if (baseType === 'triangle') {
@@ -344,9 +344,9 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
       const allAnswerIds = ['0', '1', '2'];
       const commitment = await createCommitment(String(correctTripletIdx), allAnswerIds);
-      _iterationMeta = { tripletOptions: triplet.map((t) => ({ name: t.name })) };
+      _iterationMeta = { tripletOptions: triplet.map((t) => ({ name: t.name })), commitment };
 
-      iterationStateRef.current = { commitment };
+      iterationStateRef.current = {};
       bufferSources = triplet;
     } else if (baseType === '2afc-sd') {
       const trialType = drawSameDiffTrial(test, isNewTest);
@@ -361,9 +361,9 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
       const allAnswerIds = ['same', 'different'];
       const commitment = await createCommitment(pairType, allAnswerIds);
-      _iterationMeta = null;
+      _iterationMeta = { commitment };
 
-      iterationStateRef.current = { commitment };
+      iterationStateRef.current = {};
       bufferSources = sdPair;
     } else if (isStaircase) {
       if (isNewTest) {
@@ -405,10 +405,9 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
         const allAnswerIds = ['0', '1'];
         const commitment = await createCommitment(String(referenceIdx), allAnswerIds);
-        _iterationMeta = null;
+        _iterationMeta = { commitment };
 
         iterationStateRef.current = {
-          commitment,
           testLevel: level,
           interleavedTrackIdx: trackIdx,
         };
@@ -515,8 +514,9 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
     // Verify answer via commitment (non-AB types)
     let isCorrect = null;
-    if (baseType !== 'ab' && iterState.commitment) {
-      isCorrect = verifyAnswer(iterState.commitment.answerHashes, answerId, iterState.commitment.correctHash);
+    const commitment = _iterationMeta?.commitment;
+    if (baseType !== 'ab' && commitment) {
+      isCorrect = verifyAnswer(commitment.answerHashes, answerId, commitment.correctHash);
     }
 
     // Build trial record
@@ -528,7 +528,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
         ...timing,
       });
     } else if (baseType === '2afc-sd') {
-      const correctPairType = deriveCorrectId(iterState.commitment.answerHashes, iterState.commitment.correctHash);
+      const correctPairType = deriveCorrectId(commitment.answerHashes, commitment.correctHash);
       trialRecordsRef.current.push({
         userResponse: answerId,
         pairType: correctPairType,
@@ -550,8 +550,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     } else {
       // ABX, ABXY, Triangle
       let selectedOption, correctOption;
-      const { answerHashes, correctHash } = iterState.commitment;
-      const correctAnswerId = deriveCorrectId(answerHashes, correctHash);
+      const correctAnswerId = deriveCorrectId(commitment.answerHashes, commitment.correctHash);
 
       if (baseType === 'triangle') {
         const meta = _iterationMeta;
