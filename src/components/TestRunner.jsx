@@ -1,6 +1,11 @@
 /**
  * TestRunner — main test orchestrator.
- * Handles config loading, audio initialization, test sequencing, and results collection.
+ * Handles audio initialization, test sequencing, and results collection.
+ *
+ * Anti-cheat: correct answers are never stored in React state/refs.
+ * Each iteration creates a SHA-256 hash commitment. At submit time,
+ * the user's answer is verified against the commitment. Trial records
+ * are accumulated privately and merged into results at test completion.
  *
  * Audio lifecycle:
  * 1. Parse config → collect all unique audio URLs
@@ -12,8 +17,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Box, CircularProgress, Container, Typography } from '@mui/material';
-import { parseConfig } from '../utils/config';
 import { loadAndValidate, createAudioBufferMap } from '../audio/audioLoader';
+import { useConfig } from '../hooks/useConfig';
 import { AudioEngine } from '../audio/audioEngine';
 import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
@@ -21,6 +26,7 @@ import { createShareUrl } from '../utils/share';
 import { emitEvent } from '../utils/events';
 import { isEmbedded } from '../utils/embed';
 import { formatResultsForEmit } from '../utils/formatResults';
+import { createCommitment, verifyAnswer, deriveCorrectId } from '../utils/commitment';
 import {
   createStaircaseState, createInterleavedState, getCurrentLevel,
   recordResponse, pickInterleavedTrack, recordInterleavedResponse,
@@ -31,6 +37,13 @@ import Results from './Results';
 import SampleRateInfo from './SampleRateInfo';
 
 /**
+ * Module-level storage for answer reconstruction data.
+ * NOT visible in React DevTools (only hooks are inspectable).
+ * Set in setupIteration, consumed in handleSubmit, then cleared.
+ */
+let _iterationMeta = null;
+
+/**
  * @param {object} props
  * @param {string} [props.configUrl] - URL to YAML config (standalone mode)
  * @param {object} [props.config] - Pre-parsed config object (embed mode, already normalized)
@@ -39,8 +52,8 @@ import SampleRateInfo from './SampleRateInfo';
  * @param {boolean} [props.skipResults] - Skip results screen, show minimal completion state
  */
 export default function TestRunner({ configUrl, config: configProp, postResults = true, skipWelcome = false, skipResults = false, onScreen }) {
-  const [config, setConfig] = useState(null);
-  const [configError, setConfigError] = useState(null);
+  const { config, configError } = useConfig(configUrl, configProp);
+  const [audioError, setAudioError] = useState(null);
 
   // Decoded audio cache: Map<url, DecodedAudio>
   const decodedCacheRef = useRef(new Map());
@@ -61,13 +74,23 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   const shuffledOptionsRef = useRef([]);
 
   // Per-iteration type-specific state (populated by setupIteration, read during render).
-  // Shape varies by test type — see setupIteration for each type's structure.
+  // Anti-cheat: this ref contains ONLY opaque hashes and non-answer-revealing data.
   const iterationStateRef = useRef({});
   // Re-render trigger for iteration state changes (ref updates don't cause re-renders)
   const [, setIterationVersion] = useState(0);
 
-  // Per-test persistent state (e.g. 2AFC-SD trial sequence, staircase state)
+  // Per-test persistent state (e.g. 2AFC-SD trial bag, staircase state)
   const testStateRef = useRef({});
+
+  // Anti-cheat: iteration key counter — components use this for state resets
+  const [iterationKey, setIterationKey] = useState(0);
+
+  // Anti-cheat: progress dots — {isCorrect, confidence}[] for progress bar rendering
+  const [progressDots, setProgressDots] = useState([]);
+
+  // Anti-cheat: private trial records — full data for stats, never exposed as props.
+  // Merged into results at test completion.
+  const trialRecordsRef = useRef([]);
 
   // Dynamic page title
   useEffect(() => {
@@ -136,9 +159,8 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   // Track whether acidtest:completed has been emitted (prevent duplicates on re-render)
   const completedEmittedRef = useRef(false);
 
-  /** Initialize results array from a config object. */
+  /** Initialize results array when config is loaded. */
   const initResults = useCallback((cfg) => {
-    setConfig(cfg);
     setResults(
       cfg.tests.map((test) => {
         const { entry } = getTestType(test.testType);
@@ -153,25 +175,10 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     );
   }, []);
 
-  // Load config — from prop (embed mode) or URL (standalone mode)
+  // Initialize results when config becomes available
   useEffect(() => {
-    if (configProp) {
-      // Embed mode: config already normalized by App.jsx
-      initResults(configProp);
-      return;
-    }
-    if (!configUrl) return;
-    let cancelled = false;
-    parseConfig(configUrl)
-      .then((cfg) => {
-        if (cancelled) return;
-        initResults(cfg);
-      })
-      .catch((err) => {
-        if (!cancelled) setConfigError(err.message);
-      });
-    return () => { cancelled = true; };
-  }, [configUrl, configProp, initResults]);
+    if (config) initResults(config);
+  }, [config, initResults]);
 
   // Collect all unique audio URLs from config
   const audioUrls = useMemo(() => {
@@ -207,15 +214,13 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
       })
       .catch((err) => {
         if (err.name === 'AbortError') return; // Unmount — ignore
-        if (!controller.signal.aborted) setConfigError(err.message);
+        if (!controller.signal.aborted) setAudioError(err.message);
       });
     return () => { controller.abort(); };
   }, [audioUrls]);
 
   // Stable channel data per test — derived from decoded cache, not AudioBuffers.
   // Only recomputes when testStep changes (new test = potentially different files).
-  // For ABX the waveform composite is identical every iteration since A, B are fixed
-  // and X is always one of A or B.
   const testChannelData = useMemo(() => {
     if (!config || testStep < 0 || testStep >= config.tests.length) return [];
     const cache = decodedCacheRef.current;
@@ -236,7 +241,6 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
   /**
    * Look up pre-built AudioBuffers by URL and load into engine.
-   * No data is copied — just references in the order dictated by the test protocol.
    * @param {{ bufferSources: object[] }} iterationData
    */
   const loadIterationAudio = useCallback((iterationData) => {
@@ -248,41 +252,32 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   }, []);
 
   /**
-   * Generate a 2AFC-SD trial sequence.
-   * Balanced: blocked randomization per ITU-R — blocks of 4 (AA, AB, BA, BB),
-   * shuffled within each block. Partial last block draws without replacement.
-   * Random: each trial independently picks one of {AA, AB, BA, BB}.
+   * Draw a single 2AFC-SD trial type from a bag (balanced) or randomly.
+   * Balanced: shuffled block of 4 types, draw randomly within block, refill when empty.
    */
-  const generateTrialSequence = useCallback((repeat, balanced) => {
+  const drawSameDiffTrial = useCallback((test, isNewTest) => {
     const types = ['AA', 'AB', 'BA', 'BB'];
-    if (!balanced) {
-      return Array.from({ length: repeat }, () => types[Math.floor(Math.random() * 4)]);
+    if (!test.balanced) {
+      return types[Math.floor(Math.random() * 4)];
     }
-    // Blocked randomization
-    const fullBlocks = Math.floor(repeat / 4);
-    const remainder = repeat % 4;
-    const seq = [];
-    for (let b = 0; b < fullBlocks; b++) {
-      seq.push(...shuffle([...types]));
+    if (isNewTest) {
+      testStateRef.current = { sdBag: shuffle([...types]) };
     }
-    if (remainder > 0) {
-      const partial = shuffle([...types]).slice(0, remainder);
-      seq.push(...partial);
+    const bag = testStateRef.current.sdBag;
+    if (bag.length === 0) {
+      bag.push(...shuffle([...types]));
     }
-    return seq;
+    const idx = Math.floor(Math.random() * bag.length);
+    return bag.splice(idx, 1)[0];
   }, []);
 
   /**
    * Build a staircase trial pair: reference + test at current level.
    * Randomizes which track is A vs B.
-   * @param {object[]} options - Test options in order (index 0 = reference, 1..N = levels 1..N)
-   * @param {number} level - Current staircase level (1-based into non-reference options)
-   * @returns {{ pair: object[], referenceIdx: number }}
    */
   const buildStaircasePair = useCallback((options, level) => {
-    const reference = options[0];   // First option = reference
-    const test = options[level];    // Level 1 → options[1], level N → options[N]
-    // Randomize assignment to A/B
+    const reference = options[0];
+    const test = options[level];
     const referenceIdx = Math.random() < 0.5 ? 0 : 1;
     const pair = referenceIdx === 0
       ? [{ ...reference }, { ...test }]
@@ -291,17 +286,15 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   }, []);
 
   /**
-   * Setup test iteration — shuffle once on first iteration, reuse on repeats.
-   * When a new test starts, records the shuffled option order in results so the
-   * confusion matrix A/B mapping always matches what the user saw.
+   * Setup test iteration — async. Creates SHA-256 hash commitment.
    *
-   * Populates iterationStateRef with type-specific state and returns
-   * { options, bufferSources } for loadIterationAudio.
+   * Anti-cheat: answer-revealing data is stored ONLY in module-level
+   * _iterationMeta (invisible to React DevTools). iterationStateRef
+   * contains only opaque hashes and non-revealing metadata.
    */
-  const setupIteration = useCallback((test, testIndex, isNewTest, repeatIndex = 0) => {
+  const setupIteration = useCallback(async (test, testIndex, isNewTest, repeatIndex = 0) => {
     const { entry, baseType } = getTestType(test.testType);
 
-    // Staircase: never shuffle options (order = quality levels)
     const isStaircase = baseType === '2afc-staircase';
     const shouldReshuffle = !isStaircase && (isNewTest || entry.reshuffleEveryIteration);
     const ordered = shouldReshuffle ? shuffle(test.options) : (isStaircase ? test.options : shuffledOptionsRef.current);
@@ -324,40 +317,40 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
       const randomOption = ordered[randomIndex];
       const xOpt = { name: 'X', audioUrl: randomOption.audioUrl };
 
+      const allAnswerIds = ordered.map((_, i) => String(i));
+      const commitment = await createCommitment(String(randomIndex), allAnswerIds);
+      _iterationMeta = { correctIndex: randomIndex };
+
       if (baseType === 'abxy') {
         const otherIndex = randomIndex === 0 ? 1 : 0;
         const otherOption = ordered[otherIndex];
         const yOpt = { name: 'Y', audioUrl: otherOption.audioUrl };
-        iterationStateRef.current = { xOption: xOpt, yOption: yOpt };
+        iterationStateRef.current = { commitment };
         bufferSources = [...ordered, xOpt, yOpt];
       } else {
-        iterationStateRef.current = { xOption: xOpt, yOption: null };
+        iterationStateRef.current = { commitment };
         bufferSources = [...ordered, xOpt];
       }
     } else if (baseType === 'triangle') {
-      // Pick one option as odd, duplicate the other
       const oddIdx = Math.floor(Math.random() * ordered.length);
       const dupIdx = oddIdx === 0 ? 1 : 0;
       const correctOdd = ordered[oddIdx];
-      // Build triplet: [dup, odd, dup] then shuffle
       const triplet = shuffle([
         { ...ordered[dupIdx] },
         { ...correctOdd },
         { ...ordered[dupIdx] },
       ]);
-      iterationStateRef.current = { triplet, correctOption: correctOdd };
+      const correctTripletIdx = triplet.findIndex((t) => t.audioUrl === correctOdd.audioUrl);
+
+      const allAnswerIds = ['0', '1', '2'];
+      const commitment = await createCommitment(String(correctTripletIdx), allAnswerIds);
+      _iterationMeta = { tripletOptions: triplet.map((t) => ({ name: t.name })) };
+
+      iterationStateRef.current = { commitment };
       bufferSources = triplet;
     } else if (baseType === '2afc-sd') {
-      // Generate trial sequence on first iteration
-      if (isNewTest) {
-        testStateRef.current = {
-          trialSeq: generateTrialSequence(test.repeat, test.balanced),
-        };
-      }
-      // Pop the next trial type
-      const trialType = testStateRef.current.trialSeq[repeatIndex];
-      const pType = (trialType === 'AA' || trialType === 'BB') ? 'same' : 'different';
-      // Build pair from the two options (ordered[0]=A, ordered[1]=B)
+      const trialType = drawSameDiffTrial(test, isNewTest);
+      const pairType = (trialType === 'AA' || trialType === 'BB') ? 'same' : 'different';
       const pairMap = {
         AA: [ordered[0], ordered[0]],
         BB: [ordered[1], ordered[1]],
@@ -365,10 +358,14 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
         BA: [ordered[1], ordered[0]],
       };
       const sdPair = pairMap[trialType].map((o) => ({ ...o }));
-      iterationStateRef.current = { pair: sdPair, pairType: pType };
+
+      const allAnswerIds = ['same', 'different'];
+      const commitment = await createCommitment(pairType, allAnswerIds);
+      _iterationMeta = null;
+
+      iterationStateRef.current = { commitment };
       bufferSources = sdPair;
     } else if (isStaircase) {
-      // Initialize staircase state on first iteration
       if (isNewTest) {
         const sc = test.staircase;
         if (sc.interleave) {
@@ -380,14 +377,13 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
       }
 
       if (familiarizingRef.current) {
-        // Familiarization: reference at A, starting level at B (no randomization)
         const reference = ordered[0];
-        const startLevel = test.staircase.nLevels; // Most different
+        const startLevel = test.staircase.nLevels;
         const testStim = ordered[startLevel];
         const pair = [{ ...reference }, { ...testStim }];
+
+        _iterationMeta = null;
         iterationStateRef.current = {
-          pair,
-          referenceIdx: 0,
           testLevel: startLevel,
           interleavedTrackIdx: null,
           familiarizing: true,
@@ -395,7 +391,6 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
         };
         bufferSources = pair;
       } else {
-        // Get current level from the adaptive state
         let level;
         let trackIdx = null;
         const state = adaptiveStateRef.current;
@@ -407,33 +402,41 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
         }
 
         const { pair, referenceIdx } = buildStaircasePair(ordered, level);
+
+        const allAnswerIds = ['0', '1'];
+        const commitment = await createCommitment(String(referenceIdx), allAnswerIds);
+        _iterationMeta = null;
+
         iterationStateRef.current = {
-          pair,
-          referenceIdx,
+          commitment,
           testLevel: level,
           interleavedTrackIdx: trackIdx,
         };
         bufferSources = pair;
       }
     } else {
-      // AB: options are the buffers
+      // AB: preference — no commitment
+      _iterationMeta = null;
       iterationStateRef.current = {};
       bufferSources = ordered;
     }
 
     iterationStartRef.current = Date.now();
+    setIterationKey((k) => k + 1);
     setIterationVersion((v) => v + 1);
     return { options: ordered, bufferSources };
-  }, [generateTrialSequence, buildStaircasePair]);
+  }, [drawSameDiffTrial, buildStaircasePair]);
 
-  // Start test (from welcome screen or auto-start when skipWelcome)
-  const handleStart = useCallback((formData) => {
+  // Start test
+  const handleStart = useCallback(async (formData) => {
     setForm(formData);
     setTestStep(0);
     setRepeatStep(0);
+    setProgressDots([]);
+    trialRecordsRef.current = [];
     emitEvent('acidtest:started', { form: formData });
     if (config.tests.length > 0) {
-      const iterationData = setupIteration(config.tests[0], 0, true);
+      const iterationData = await setupIteration(config.tests[0], 0, true);
       loadIterationAudio(iterationData);
     }
   }, [config, setupIteration, loadIterationAudio]);
@@ -445,14 +448,15 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     }
   }, [skipWelcome, audioInitialized, testStep, config, handleStart]);
 
-  // Restart test (from results screen) — reuses cached audio
-  const handleRestart = useCallback(() => {
+  // Restart test — reuses cached audio
+  const handleRestart = useCallback(async () => {
     completedEmittedRef.current = false;
     setTestStep(0);
     setRepeatStep(0);
+    setProgressDots([]);
+    trialRecordsRef.current = [];
     adaptiveStateRef.current = null;
     familiarizingRef.current = false;
-    // Reset results and update optionNames to shuffled order for first test
     const freshResults = config.tests.map((test) => {
       const { entry } = getTestType(test.testType);
       return {
@@ -465,122 +469,124 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     });
     setResults(freshResults);
     if (config.tests.length > 0) {
-      const iterationData = setupIteration(config.tests[0], 0, true);
+      const iterationData = await setupIteration(config.tests[0], 0, true);
       loadIterationAudio(iterationData);
     }
   }, [config, setupIteration, loadIterationAudio]);
 
-  // Handle AB test submission
-  const handleAbSubmit = (selectedOption) => {
-    const now = Date.now();
-    const newResults = JSON.parse(JSON.stringify(results));
-    newResults[testStep].userSelections.push({
-      ...selectedOption,
-      startedAt: iterationStartRef.current,
-      finishedAt: now,
-    });
-    setResults(newResults);
-    advanceStep(newResults);
-  };
+  /**
+   * Merge private trial records into results for the completed test.
+   */
+  const mergeTrialRecords = useCallback((testIndex, currentResults) => {
+    const test = config.tests[testIndex];
+    const { entry, baseType } = getTestType(test.testType);
+    const newResults = JSON.parse(JSON.stringify(currentResults));
 
-  // Handle ABX / Triangle test submission
-  const handleAbxSubmit = (selectedOption, correctOption, confidence) => {
-    const now = Date.now();
-    const newResults = JSON.parse(JSON.stringify(results));
-    newResults[testStep].userSelectionsAndCorrects.push({
-      selectedOption: { ...selectedOption },
-      correctOption: { ...correctOption },
-      confidence: confidence || null,
-      startedAt: iterationStartRef.current,
-      finishedAt: now,
-    });
-    setResults(newResults);
-    advanceStep(newResults);
-  };
+    if (baseType === '2afc-staircase') {
+      newResults[testIndex].staircaseData = {
+        trials: JSON.parse(JSON.stringify(trialRecordsRef.current)),
+        finalState: JSON.parse(JSON.stringify(adaptiveStateRef.current)),
+        interleaved: test.staircase.interleave,
+      };
+    } else {
+      newResults[testIndex][entry.resultDataKey] = JSON.parse(JSON.stringify(trialRecordsRef.current));
+    }
 
-  // Handle same-different test submission
-  const handleSameDiffSubmit = (userResponse, pairType, confidence) => {
-    const now = Date.now();
-    const newResults = JSON.parse(JSON.stringify(results));
-    newResults[testStep].userSelectionsAndCorrects.push({
-      userResponse,
-      pairType,
-      confidence: confidence || null,
-      startedAt: iterationStartRef.current,
-      finishedAt: now,
-    });
-    setResults(newResults);
-    advanceStep(newResults);
-  };
+    return newResults;
+  }, [config]);
 
-  // Handle staircase test submission
-  const handleStaircaseSubmit = (selectedIdx) => {
+  /**
+   * Unified submit handler for all test types.
+   * @param {string|null} answerId - Track index as string, 'same'/'different', or null (familiarization)
+   * @param {string|null} confidence - 'sure'|'somewhat'|'guessing'|null
+   */
+  const handleSubmit = (answerId, confidence) => {
+    const now = Date.now();
     const test = config.tests[testStep];
+    const { baseType } = getTestType(test.testType);
+    const iterState = iterationStateRef.current;
 
-    // Familiarization complete — transition to first real trial
-    if (familiarizingRef.current) {
+    // Staircase familiarization: skip to first real trial
+    if (baseType === '2afc-staircase' && iterState.familiarizing) {
       familiarizingRef.current = false;
-      const iterationData = setupIteration(test, testStep, false);
-      loadIterationAudio(iterationData);
+      setupIteration(test, testStep, false).then((data) => loadIterationAudio(data));
       return;
     }
 
-    const now = Date.now();
-    const { referenceIdx, testLevel, interleavedTrackIdx } = iterationStateRef.current;
-    const isCorrect = selectedIdx === referenceIdx;
+    // Verify answer via commitment (non-AB types)
+    let isCorrect = null;
+    if (baseType !== 'ab' && iterState.commitment) {
+      isCorrect = verifyAnswer(iterState.commitment.answerHashes, answerId, iterState.commitment.correctHash);
+    }
 
-    // Update adaptive state
-    const state = adaptiveStateRef.current;
-    if (test.staircase.interleave) {
-      recordInterleavedResponse(state, interleavedTrackIdx, isCorrect);
+    // Build trial record
+    const timing = { startedAt: iterationStartRef.current, finishedAt: now };
+
+    if (baseType === 'ab') {
+      trialRecordsRef.current.push({
+        ...currentOptions[parseInt(answerId)],
+        ...timing,
+      });
+    } else if (baseType === '2afc-sd') {
+      const correctPairType = deriveCorrectId(iterState.commitment.answerHashes, iterState.commitment.correctHash);
+      trialRecordsRef.current.push({
+        userResponse: answerId,
+        pairType: correctPairType,
+        confidence: confidence || null,
+        ...timing,
+      });
+    } else if (baseType === '2afc-staircase') {
+      const state = adaptiveStateRef.current;
+      if (test.staircase.interleave) {
+        recordInterleavedResponse(state, iterState.interleavedTrackIdx, isCorrect);
+      } else {
+        recordResponse(state, isCorrect);
+      }
+      trialRecordsRef.current.push({
+        level: iterState.testLevel,
+        isCorrect,
+        ...timing,
+      });
     } else {
-      recordResponse(state, isCorrect);
+      // ABX, ABXY, Triangle
+      let selectedOption, correctOption;
+      const { answerHashes, correctHash } = iterState.commitment;
+      const correctAnswerId = deriveCorrectId(answerHashes, correctHash);
+
+      if (baseType === 'triangle') {
+        const meta = _iterationMeta;
+        selectedOption = meta ? { name: meta.tripletOptions[parseInt(answerId)].name }
+          : { name: `Track ${answerId}` };
+        correctOption = meta ? { name: meta.tripletOptions[parseInt(correctAnswerId)].name }
+          : { name: `Track ${correctAnswerId}` };
+      } else {
+        selectedOption = { name: currentOptions[parseInt(answerId)].name };
+        correctOption = { name: currentOptions[parseInt(correctAnswerId)].name };
+      }
+
+      trialRecordsRef.current.push({
+        selectedOption,
+        correctOption,
+        confidence: confidence || null,
+        ...timing,
+      });
     }
 
-    // Record trial in results
-    const newResults = JSON.parse(JSON.stringify(results));
-    const staircaseData = newResults[testStep].staircaseData;
+    // Update progress dots
+    setProgressDots((prev) => [...prev, { isCorrect, confidence: confidence || null }]);
 
-    // On first trial, staircaseData is [], convert to structured object
-    if (Array.isArray(staircaseData) && staircaseData.length === 0) {
-      newResults[testStep].staircaseData = {
-        trials: [],
-        finalState: null,
-        interleaved: test.staircase.interleave,
-      };
-    }
+    _iterationMeta = null;
 
-    newResults[testStep].staircaseData.trials.push({
-      level: testLevel,
-      isCorrect,
-      startedAt: iterationStartRef.current,
-      finishedAt: now,
-    });
-
-    // Check if staircase is complete
-    const complete = test.staircase.interleave
-      ? isInterleavedComplete(state)
-      : state.complete;
-
-    if (complete) {
-      // Deep copy the final adaptive state into results
-      newResults[testStep].staircaseData.finalState = JSON.parse(JSON.stringify(state));
-    }
-
-    setResults(newResults);
-    advanceStep(newResults, complete);
+    advanceStep(isCorrect);
   };
 
   /**
    * Advance to next iteration or test.
-   * @param {object[]} updatedResults
-   * @param {boolean} [adaptiveComplete] - For adaptive types: whether the algorithm says we're done
    */
-  const advanceStep = (updatedResults, adaptiveComplete) => {
+  const advanceStep = async (isCorrect) => {
     const test = config.tests[testStep];
-    const { entry } = getTestType(test.testType);
+    const { entry, baseType } = getTestType(test.testType);
 
-    // Emit progress event — trial just completed
     emitEvent('acidtest:progress', {
       testIndex: testStep,
       testName: test.name,
@@ -589,32 +595,40 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
       totalTrials: entry.isAdaptive ? null : test.repeat,
     });
 
-    // Determine if we should continue this test
     let continueTest;
     if (entry.isAdaptive) {
-      continueTest = !adaptiveComplete;
+      const state = adaptiveStateRef.current;
+      const complete = test.staircase.interleave
+        ? isInterleavedComplete(state)
+        : state.complete;
+      continueTest = !complete;
     } else {
       continueTest = repeatStep + 1 < test.repeat;
     }
 
     if (continueTest) {
-      // Next trial/repeat of same test
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      const iterationData = setupIteration(test, testStep, false, nextRepeat);
-      loadIterationAudio(iterationData);
-    } else if (testStep + 1 < config.tests.length) {
-      // Next test
-      const nextTest = testStep + 1;
-      setTestStep(nextTest);
-      setRepeatStep(0);
-      adaptiveStateRef.current = null;
-      familiarizingRef.current = false;
-      const iterationData = setupIteration(config.tests[nextTest], nextTest, true);
+      const iterationData = await setupIteration(test, testStep, false, nextRepeat);
       loadIterationAudio(iterationData);
     } else {
-      // Done — show results
-      setTestStep(config.tests.length);
+      // Test complete — merge trial records into results
+      const mergedResults = mergeTrialRecords(testStep, results);
+      setResults(mergedResults);
+
+      if (testStep + 1 < config.tests.length) {
+        const nextTest = testStep + 1;
+        setTestStep(nextTest);
+        setRepeatStep(0);
+        setProgressDots([]);
+        trialRecordsRef.current = [];
+        adaptiveStateRef.current = null;
+        familiarizingRef.current = false;
+        const iterationData = await setupIteration(config.tests[nextTest], nextTest, true);
+        loadIterationAudio(iterationData);
+      } else {
+        setTestStep(config.tests.length);
+      }
     }
   };
 
@@ -645,12 +659,13 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
 
   // --- Render ---
 
-  if (configError) {
+  const error = configError || audioError;
+  if (error) {
     return (
       <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={4}>
         <Container maxWidth="md">
           <Typography color="error" variant="h6">Error</Typography>
-          <Typography>{configError}</Typography>
+          <Typography>{error}</Typography>
         </Container>
       </Box>
     );
@@ -667,7 +682,6 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     return null;
   }
 
-  // Welcome screen (or loading indicator when skipWelcome)
   if (testStep === -1) {
     if (skipWelcome) {
       return (
@@ -698,7 +712,6 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     );
   }
 
-  // Results screen
   if (testStep >= config.tests.length) {
     if (skipResults) {
       return (
@@ -729,19 +742,10 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   const { entry, hasConfidence, baseType } = getTestType(test.testType);
   const TestComponent = entry.testComponent;
 
-  // Step string: adaptive types show "Trial N", fixed types show "N/total"
   const stepStr = entry.isAdaptive
     ? `Trial ${repeatStep + 1}`
     : `${repeatStep + 1}/${test.repeat}`;
 
-  // Submit handler
-  const submitHandler = entry.submitType === 'staircase' ? handleStaircaseSubmit
-    : entry.submitType === 'samediff' ? handleSameDiffSubmit
-    : entry.submitType === 'ab' ? handleAbSubmit
-    : handleAbxSubmit;
-
-  // Common props shared by all test types. Remount only on test change, not per trial.
-  // Per-trial state resets are handled by each component's own useEffect dependencies.
   const commonProps = {
     key: testStep,
     name: test.name,
@@ -750,10 +754,10 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     engine,
     channelData: testChannelData,
     crossfadeForced,
-    onSubmit: submitHandler,
+    onSubmit: handleSubmit,
+    iterationKey,
   };
 
-  // Type-specific props — read from iterationStateRef
   const iterState = iterationStateRef.current;
   let typeProps = {};
   if (baseType === 'ab') {
@@ -761,38 +765,30 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   } else if (baseType === 'abx') {
     typeProps = {
       options: currentOptions,
-      xOption: iterState.xOption,
       totalIterations: test.repeat,
-      iterationResults: results[testStep].userSelectionsAndCorrects,
+      progressDots,
       showConfidence: hasConfidence,
       showProgress: test.showProgress,
     };
   } else if (baseType === 'abxy') {
     typeProps = {
       options: currentOptions,
-      xOption: iterState.xOption,
-      yOption: iterState.yOption,
       totalIterations: test.repeat,
-      iterationResults: results[testStep].userSelectionsAndCorrects,
+      progressDots,
       showConfidence: hasConfidence,
       showProgress: test.showProgress,
     };
   } else if (baseType === 'triangle') {
     typeProps = {
-      triplet: iterState.triplet,
-      correctOption: iterState.correctOption,
       totalIterations: test.repeat,
-      iterationResults: results[testStep].userSelectionsAndCorrects,
+      progressDots,
       showConfidence: hasConfidence,
       showProgress: test.showProgress,
     };
   } else if (baseType === '2afc-sd') {
     typeProps = {
-      pair: iterState.pair,
-      pairType: iterState.pairType,
-      options: currentOptions,
       totalIterations: test.repeat,
-      iterationResults: results[testStep].userSelectionsAndCorrects,
+      progressDots,
       showConfidence: hasConfidence,
       showProgress: test.showProgress,
     };
@@ -801,28 +797,24 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     const sc = test.staircase;
     if (iterState.familiarizing) {
       typeProps = {
-        pair: iterState.pair,
-        referenceIdx: iterState.referenceIdx,
         testLevel: iterState.testLevel,
         familiarizing: true,
         pairNames: iterState.pairNames,
         reversalCount: 0,
         targetReversals: sc.interleave ? sc.reversals * 2 : sc.reversals,
-        trialHistory: [],
+        progressDots,
         minRemaining: 0,
       };
     } else {
       typeProps = {
-        pair: iterState.pair,
-        referenceIdx: iterState.referenceIdx,
         testLevel: iterState.testLevel,
         reversalCount: sc.interleave
           ? state.tracks.reduce((sum, t) => sum + t.reversals.length, 0)
           : state.reversals.length,
         targetReversals: sc.interleave
-          ? sc.reversals * 2  // 2 tracks
+          ? sc.reversals * 2
           : sc.reversals,
-        trialHistory: results[testStep].staircaseData?.trials || [],
+        progressDots,
         minRemaining: sc.interleave
           ? minInterleavedRemainingTrials(state)
           : minRemainingTrials(state),

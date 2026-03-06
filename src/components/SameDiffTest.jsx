@@ -20,45 +20,40 @@ import { useHeardTracks } from '../audio/useHeardTracks';
  * @param {string} props.name - Test name
  * @param {string} [props.description] - Test instructions
  * @param {string} props.stepStr - e.g., "3/16"
- * @param {object[]} props.pair - 2 audio option objects for this trial
- * @param {string} props.pairType - 'same' or 'different'
- * @param {object[]} props.options - Original A/B options in fixed order
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform
  * @param {boolean} props.crossfadeForced
  * @param {number} props.totalIterations - Total number of iterations
- * @param {object[]} props.iterationResults - Completed iteration results
+ * @param {object[]} props.progressDots - Array of {isCorrect, confidence} for completed iterations
  * @param {boolean} [props.showConfidence] - Whether to show confidence selection
  * @param {boolean} [props.showProgress] - Whether to show iteration progress bar
- * @param {(userResponse: string, pairType: string, confidence: string|null) => void} props.onSubmit
+ * @param {number} props.iterationKey - Counter for state resets between iterations
+ * @param {(answerId: string, confidence: string|null) => void} props.onSubmit
  */
 export default function SameDiffTest({
   name,
   description,
   stepStr,
-  pair,
-  pairType,
-  options,
   engine,
   channelData,
   crossfadeForced,
   totalIterations,
-  iterationResults = [],
+  progressDots = [],
   showConfidence = false,
   showProgress = false,
+  iterationKey,
   onSubmit,
 }) {
   const trackCount = 2;
   const theme = useTheme();
   const selectedTrack = useSelectedTrack(engine);
 
-  // The user's answer: 'same' or 'different', or null
   const [answer, setAnswer] = useState(null);
   const [pendingSubmit, setPendingSubmit] = useState(false);
-  const { heardTracks, markHeard } = useHeardTracks(pair);
+  const { heardTracks, markHeard } = useHeardTracks(iterationKey);
 
-  // Reset state when pair changes (new iteration)
-  useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [pair]);
+  // Reset state on new iteration
+  useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [iterationKey]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
@@ -74,17 +69,15 @@ export default function SameDiffTest({
       setPendingSubmit(true);
     } else {
       engine?.stop();
-      onSubmit(response, pairType, null);
+      onSubmit(response, null);
     }
   };
 
   const handleConfidenceClick = (confidence) => {
     engine?.stop();
-    onSubmit(answer, pairType, confidence);
+    onSubmit(answer, confidence);
   };
 
-  // Hotkeys: Enter is not used for submit here since we have two answer buttons.
-  // Track selection via A/B keys still works.
   useHotkeys({ engine, trackCount, onTrackSelect: handleTrackSelect, onSubmit: () => {} });
 
   return (
@@ -197,15 +190,14 @@ export default function SameDiffTest({
               >
                 {Array.from({ length: totalIterations }, (_, i) => {
                   let color = theme.palette.progress.pending;
-                  if (i < iterationResults.length) {
-                    const r = iterationResults[i];
-                    const correct = r.userResponse === r.pairType;
-                    if (r.confidence === 'sure') {
-                      color = correct ? theme.palette.success.dark : theme.palette.error.dark;
-                    } else if (r.confidence === 'somewhat') {
-                      color = correct ? theme.palette.success.main : theme.palette.error.main;
+                  if (i < progressDots.length) {
+                    const d = progressDots[i];
+                    if (d.confidence === 'sure') {
+                      color = d.isCorrect ? theme.palette.success.dark : theme.palette.error.dark;
+                    } else if (d.confidence === 'somewhat') {
+                      color = d.isCorrect ? theme.palette.success.main : theme.palette.error.main;
                     } else {
-                      color = correct ? theme.palette.success.light : theme.palette.error.light;
+                      color = d.isCorrect ? theme.palette.success.light : theme.palette.error.light;
                     }
                   }
                   return (

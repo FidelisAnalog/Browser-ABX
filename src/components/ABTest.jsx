@@ -4,7 +4,7 @@
  * Track selection, waveform, transport, and submit.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Button, Container, Divider, Paper, Typography } from '@mui/material';
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
@@ -21,7 +21,8 @@ import { useHeardTracks } from '../audio/useHeardTracks';
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform (from TestRunner)
  * @param {boolean} props.crossfadeForced
- * @param {(selectedOption: object) => void} props.onSubmit
+ * @param {number} props.iterationKey - Counter for state resets between iterations
+ * @param {(answerId: string, confidence: null) => void} props.onSubmit
  */
 export default function ABTest({
   name,
@@ -31,11 +32,15 @@ export default function ABTest({
   engine,
   channelData,
   crossfadeForced,
+  iterationKey,
   onSubmit,
 }) {
   const selectedTrack = useSelectedTrack(engine);
   const [answer, setAnswer] = useState(null);
-  const { heardTracks, markHeard } = useHeardTracks(options);
+  const { heardTracks, markHeard } = useHeardTracks(iterationKey);
+
+  // Reset state on new iteration
+  useEffect(() => { setAnswer(null); }, [iterationKey]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
@@ -53,7 +58,7 @@ export default function ABTest({
   const handleSubmit = () => {
     if (!canSubmit) return;
     engine?.stop();
-    onSubmit(options[answer]);
+    onSubmit(String(answer), null);
   };
 
   useHotkeys({ engine, trackCount: options.length, onTrackSelect: handleTrackSelect, onSubmit: handleSubmit });

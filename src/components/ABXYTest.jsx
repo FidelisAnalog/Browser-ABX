@@ -23,31 +23,29 @@ import { useHeardTracks } from '../audio/useHeardTracks';
  * @param {string} [props.description] - Test instructions
  * @param {string} props.stepStr - e.g., "3/10"
  * @param {object[]} props.options - Original (non-mystery) options in fixed order
- * @param {object} props.xOption - The X option (has audioUrl matching one of the options)
- * @param {object} props.yOption - The Y option (has audioUrl matching the OTHER option)
  * @param {import('../audio/audioEngine').AudioEngine|null} props.engine
  * @param {Float32Array[]} props.channelData - Stable channel 0 data for waveform (from TestRunner)
  * @param {boolean} props.crossfadeForced
  * @param {number} props.totalIterations - Total number of iterations for this test
- * @param {object[]} props.iterationResults - Array of {selectedOption, correctOption} for completed iterations
+ * @param {object[]} props.progressDots - Array of {isCorrect, confidence} for completed iterations
  * @param {boolean} [props.showConfidence] - Whether to show confidence selection (ABXY+C)
  * @param {boolean} [props.showProgress] - Whether to show iteration progress bar
- * @param {(selectedOption: object, correctOption: object, confidence: string|null) => void} props.onSubmit
+ * @param {number} props.iterationKey - Counter for state resets between iterations
+ * @param {(answerId: string, confidence: string|null) => void} props.onSubmit
  */
 export default function ABXYTest({
   name,
   description,
   stepStr,
   options,
-  xOption,
-  yOption,
   engine,
   channelData,
   crossfadeForced,
   totalIterations,
-  iterationResults = [],
+  progressDots = [],
   showConfidence = false,
   showProgress = false,
+  iterationKey,
   onSubmit,
 }) {
   const trackCount = options.length + 2; // options + X + Y
@@ -58,14 +56,12 @@ export default function ABXYTest({
   const theme = useTheme();
   const selectedTrack = useSelectedTrack(engine);
 
-  // The user's answer: which non-mystery option they think X matches
   const [answer, setAnswer] = useState(null);
-  // Whether the confidence stack is showing (ABXY+C only)
   const [pendingSubmit, setPendingSubmit] = useState(false);
-  const { heardTracks, markHeard } = useHeardTracks(xOption);
+  const { heardTracks, markHeard } = useHeardTracks(iterationKey);
 
-  // Reset state when X changes (new iteration)
-  useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [xOption]);
+  // Reset state on new iteration
+  useEffect(() => { setAnswer(null); setPendingSubmit(false); }, [iterationKey]);
 
   const handleTrackSelect = (index) => {
     engine?.selectTrack(index);
@@ -84,25 +80,19 @@ export default function ABXYTest({
     return String.fromCharCode(65 + answer);
   };
 
-  // Find the correct option (the one whose audioUrl matches X)
-  const getCorrectOption = () =>
-    options.find((opt) => opt.audioUrl === xOption.audioUrl);
-
   const handleSubmitClick = () => {
     if (answer === null) return;
     if (showConfidence) {
-      // Show confidence stack
       setPendingSubmit(true);
     } else {
-      // Plain ABXY — submit immediately
       engine?.stop();
-      onSubmit(options[answer], getCorrectOption(), null);
+      onSubmit(String(answer), null);
     }
   };
 
   const handleConfidenceClick = (confidence) => {
     engine?.stop();
-    onSubmit(options[answer], getCorrectOption(), confidence);
+    onSubmit(String(answer), confidence);
   };
 
   const canSubmit = answer !== null && heardTracks.has(xTrackIndex);
@@ -148,7 +138,6 @@ export default function ABXYTest({
                 mt={1}
                 sx={{ position: 'relative', height: 36.5 }}
               >
-                {/* Submit button — conditionally rendered, no animation */}
                 {!pendingSubmit && (
                   <Box sx={{ position: 'absolute', bottom: 0, right: 0 }}>
                     <Button
@@ -163,7 +152,6 @@ export default function ABXYTest({
                   </Box>
                 )}
 
-                {/* Confidence stack — animates upward from the button position */}
                 {pendingSubmit && (
                   <Box
                     sx={{
@@ -204,19 +192,16 @@ export default function ABXYTest({
               >
                 {Array.from({ length: totalIterations }, (_, i) => {
                   let color = theme.palette.progress.pending;
-                  if (i < iterationResults.length) {
-                    const r = iterationResults[i];
-                    const correct = r.selectedOption.audioUrl === r.correctOption.audioUrl;
-                    if (!r.confidence) {
-                      // Plain ABXY — single shade
-                      color = correct ? theme.palette.success.dark : theme.palette.error.dark;
-                    } else if (r.confidence === 'sure') {
-                      color = correct ? theme.palette.success.dark : theme.palette.error.dark;
-                    } else if (r.confidence === 'somewhat') {
-                      color = correct ? theme.palette.success.main : theme.palette.error.main;
+                  if (i < progressDots.length) {
+                    const d = progressDots[i];
+                    if (!d.confidence) {
+                      color = d.isCorrect ? theme.palette.success.dark : theme.palette.error.dark;
+                    } else if (d.confidence === 'sure') {
+                      color = d.isCorrect ? theme.palette.success.dark : theme.palette.error.dark;
+                    } else if (d.confidence === 'somewhat') {
+                      color = d.isCorrect ? theme.palette.success.main : theme.palette.error.main;
                     } else {
-                      // guessing
-                      color = correct ? theme.palette.success.light : theme.palette.error.light;
+                      color = d.isCorrect ? theme.palette.success.light : theme.palette.error.light;
                     }
                   }
                   return (
