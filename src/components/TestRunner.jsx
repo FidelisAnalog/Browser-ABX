@@ -126,9 +126,36 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     audioBufferMapRef.current = createAudioBufferMap(
       engineRef.current.context, decodedCacheRef.current
     );
-    window.__engine = engineRef.current; // dev console access
   }
   const engine = engineRef.current;
+
+  // Anti-cheat: facade hides engine internals (_buffers, _readySources) from React DevTools.
+  // Components receive only public methods — no access to buffer identity for answer deduction.
+  const engineFacade = useMemo(() => {
+    if (!engine) return null;
+    return {
+      selectTrack: (i) => engine.selectTrack(i),
+      play: () => engine.play(),
+      pause: () => engine.pause(),
+      stop: () => engine.stop(),
+      seek: (t) => engine.seek(t),
+      setVolume: (v) => engine.setVolume(v),
+      setLoopRegion: (s, e) => engine.setLoopRegion(s, e),
+      setCrossfade: (e) => engine.setCrossfade(e),
+      resumeContext: () => engine.resumeContext(),
+      subscribe: (cb) => engine.subscribe(cb),
+      getTransportState: () => engine.getTransportState(),
+      getSelectedTrack: () => engine.getSelectedTrack(),
+      getDuration: () => engine.getDuration(),
+      getVolume: () => engine.getVolume(),
+      getLoopRegion: () => engine.getLoopRegion(),
+      getCrossfadeEnabled: () => engine.getCrossfadeEnabled(),
+      getSampleRateInfo: () => engine.getSampleRateInfo(),
+      get currentTimeRef() { return engine.currentTimeRef; },
+      get currentTime() { return engine.currentTime; },
+      get context() { return engine.context; },
+    };
+  }, [engine]);
 
   // Cleanup engine on unmount (SPA navigation) and on page unload (full navigation).
   // React useEffect cleanup does NOT fire on full page navigation, so pagehide
@@ -592,6 +619,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
       trialIndex: repeatStep,
       totalTests: config.tests.length,
       totalTrials: entry.isAdaptive ? null : test.repeat,
+      isCorrect,
     });
 
     let continueTest;
@@ -750,7 +778,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     name: test.name,
     description: test.description,
     stepStr,
-    engine,
+    engine: engineFacade,
     channelData: testChannelData,
     crossfadeForced,
     onSubmit: handleSubmit,
