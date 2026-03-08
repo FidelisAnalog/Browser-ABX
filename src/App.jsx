@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Box, CircularProgress, Link, ThemeProvider, Typography, createTheme, CssBaseline } from '@mui/material';
+import { useState, useEffect, useMemo } from 'react';
+import { Box, ThemeProvider, Typography, createTheme, CssBaseline } from '@mui/material';
 import TestRunner from './components/TestRunner';
 import SharedResults from './components/SharedResults';
 import LandingPage from './components/LandingPage';
+import Layout from './components/Layout';
 import { normalizeConfig } from './utils/config';
 import { emitEvent } from './utils/events';
 import { isEmbedded } from './utils/embed';
@@ -166,22 +167,24 @@ export default function App() {
     return () => window.removeEventListener('message', handler);
   }, []);
 
+  // Determine content and screen for non-TestRunner routes
   let content;
+  let directScreen = null; // screen set directly (non-TestRunner routes)
   if (shareParam) {
-    // Self-contained shared results view
+    directScreen = 'shared-results';
     content = <SharedResults shareParam={shareParam} />;
   } else if (configUrl) {
-    // Standalone YAML config (works in iframe or standalone)
+    // TestRunner reports screen via onScreen callback
     content = <TestRunner configUrl={configUrl} onScreen={setScreen} />;
   } else if (postMessageError) {
-    // postMessage config failed
+    directScreen = 'error';
     content = (
-      <Box display="flex" justifyContent="center" alignItems="center" p={3}>
+      <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
         <Typography color="error">{postMessageError}</Typography>
       </Box>
     );
   } else if (postMessageConfig) {
-    // Config received via postMessage
+    // TestRunner reports screen via onScreen callback
     content = (
       <TestRunner
         config={postMessageConfig}
@@ -192,23 +195,19 @@ export default function App() {
       />
     );
   } else {
+    directScreen = 'landing';
     content = <LandingPage />;
   }
+
+  // directScreen overrides TestRunner's screen for non-TestRunner routes
+  const activeScreen = directScreen || screen;
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      {content}
-      {isEmbedded && screen === 'test' && (
-        <Box textAlign="center" mt={-2} pb={0.5}>
-          <Typography variant="caption" color="text.secondary">
-            powered by{' '}
-            <Link href="https://acidtest.io" target="_blank" rel="noopener" color="inherit" underline="hover">
-              acidtest.io
-            </Link>
-          </Typography>
-        </Box>
-      )}
+      <Layout screen={activeScreen}>
+        {content}
+      </Layout>
     </ThemeProvider>
   );
 }

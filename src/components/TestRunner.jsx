@@ -15,8 +15,8 @@
  * 5. Per test iteration: build array of AudioBuffer references, load into engine
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Box, CircularProgress, Container, Typography } from '@mui/material';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Box, CircularProgress, Typography } from '@mui/material';
 import { loadAndValidate, createAudioBufferMap } from '../audio/audioLoader';
 import { useConfig } from '../hooks/useConfig';
 import { AudioEngine } from '../audio/audioEngine';
@@ -24,7 +24,6 @@ import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
 import { createShareUrl } from '../utils/share';
 import { emitEvent } from '../utils/events';
-import { isEmbedded } from '../utils/embed';
 import { formatResultsForEmit } from '../utils/formatResults';
 import { createCommitment, verifyAnswer, deriveCorrectId } from '../utils/commitment';
 import {
@@ -319,7 +318,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
    * _iterationMeta (invisible to React DevTools). iterationStateRef
    * contains only opaque hashes and non-revealing metadata.
    */
-  const setupIteration = useCallback(async (test, testIndex, isNewTest, repeatIndex = 0) => {
+  const setupIteration = useCallback(async (test, testIndex, isNewTest) => {
     const { entry, baseType } = getTestType(test.testType);
 
     const isStaircase = baseType === '2afc-staircase';
@@ -481,6 +480,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     setRepeatStep(0);
     setProgressDots([]);
     trialRecordsRef.current = [];
+    testStateRef.current = {};
     adaptiveStateRef.current = null;
     familiarizingRef.current = false;
     const freshResults = config.tests.map((test) => {
@@ -611,7 +611,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
    */
   const advanceStep = async (isCorrect) => {
     const test = config.tests[testStep];
-    const { entry, baseType } = getTestType(test.testType);
+    const { entry } = getTestType(test.testType);
 
     emitEvent('acidtest:progress', {
       testIndex: testStep,
@@ -636,7 +636,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     if (continueTest) {
       const nextRepeat = repeatStep + 1;
       setRepeatStep(nextRepeat);
-      const iterationData = await setupIteration(test, testStep, false, nextRepeat);
+      const iterationData = await setupIteration(test, testStep, false);
       loadIterationAudio(iterationData);
     } else {
       // Test complete — merge trial records into results
@@ -689,19 +689,17 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   const error = configError || audioError;
   if (error) {
     return (
-      <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={4}>
-        <Container maxWidth="md">
-          <Typography color="error" variant="h6">Error</Typography>
-          <Typography>{error}</Typography>
-        </Container>
-      </Box>
+      <>
+        <Typography color="error" variant="h6">Error</Typography>
+        <Typography>{error}</Typography>
+      </>
     );
   }
 
   if (!config) {
     if (skipWelcome) {
       return (
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight={isEmbedded ? '700px' : '100vh'}>
+        <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
           <CircularProgress />
         </Box>
       );
@@ -712,7 +710,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   if (testStep === -1) {
     if (skipWelcome) {
       return (
-        <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" minHeight={isEmbedded ? '700px' : '100vh'} gap={2}>
+        <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" flex={1} gap={2}>
           <CircularProgress />
           {loadProgress.total > 0 && (
             <Typography variant="body2" color="text.secondary">
@@ -725,9 +723,7 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
     return (
       <>
         {engine && (
-          <Container maxWidth="md" sx={{ pt: 2 }}>
-            <SampleRateInfo info={engine.getSampleRateInfo()} />
-          </Container>
+          <SampleRateInfo info={engine.getSampleRateInfo()} />
         )}
         <Welcome
           description={config.welcome?.description}
@@ -742,23 +738,19 @@ export default function TestRunner({ configUrl, config: configProp, postResults 
   if (testStep >= config.tests.length) {
     if (skipResults) {
       return (
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight={isEmbedded ? undefined : '100vh'}>
+        <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
           <Typography variant="h6" color="text.secondary">Test complete</Typography>
         </Box>
       );
     }
     return (
-      <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={2} pb={2}>
-        <Container maxWidth="md">
-          <Results
-            description={config.results?.description}
-            results={results}
-            config={config}
-            configUrl={configUrl}
-            onRestart={handleRestart}
-          />
-        </Container>
-      </Box>
+      <Results
+        description={config.results?.description}
+        results={results}
+        config={config}
+        configUrl={configUrl}
+        onRestart={handleRestart}
+      />
     );
   }
 

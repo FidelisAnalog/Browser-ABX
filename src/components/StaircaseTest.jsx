@@ -7,8 +7,8 @@
  * Follows the standard UI pattern: select a track, then click one submit button.
  */
 
-import React, { useState, useEffect } from 'react';
-import { Box, Button, Container, Divider, Paper, Typography, useTheme } from '@mui/material';
+import { useState, useEffect } from 'react';
+import { Box, Button, Divider, Paper, Typography, useTheme } from '@mui/material';
 import TrackSelector from './TrackSelector';
 import AudioControls from './AudioControls';
 import { useSelectedTrack } from '../audio/useEngineState';
@@ -81,11 +81,9 @@ export default function StaircaseTest({
   useHotkeys({ engine, trackCount, onTrackSelect: handleTrackSelect, onSubmit: handleSubmit });
 
   return (
-    <Box pt={2} pb={2}>
-      <Container maxWidth="md">
-        <Box display="flex" flexDirection="column" gap={1.5}>
-          {/* Test info */}
-          <Paper>
+    <Box display="flex" flexDirection="column" gap={1.5}>
+      {/* Test info */}
+      <Paper>
             <Box p={2.5}>
               <Box mb={4}>
                 <Typography variant="h5" textAlign="center">
@@ -180,8 +178,6 @@ export default function StaircaseTest({
             channelData={channelData}
             crossfadeForced={crossfadeForced}
           />
-        </Box>
-      </Container>
     </Box>
   );
 }
