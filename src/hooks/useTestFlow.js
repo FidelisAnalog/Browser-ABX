@@ -54,7 +54,7 @@ export function useTestFlow({ config, configUrl, audioEngine, onEvent, onAudioLo
   const shuffledOptionsRef = useRef([]);
 
   // Per-iteration UI props from setup's `ui` return. Safe (no answer data).
-  const uiPropsRef = useRef({});
+  const uiPropsRef = useRef(null);
   // Re-render trigger for ref updates (refs don't cause re-renders)
   const [, setIterationVersion] = useState(0);
 
@@ -283,6 +283,7 @@ export function useTestFlow({ config, configUrl, audioEngine, onEvent, onAudioLo
 
       if (testStep + 1 < config.tests.length) {
         const nextTest = testStep + 1;
+        uiPropsRef.current = null;
         setTestStep(nextTest);
         setRepeatStep(0);
         setProgressDots([]);
@@ -362,6 +363,7 @@ export function useTestFlow({ config, configUrl, audioEngine, onEvent, onAudioLo
   // Restart test — reuses cached audio
   const handleRestart = useCallback(async () => {
     completedEmittedRef.current = false;
+    uiPropsRef.current = null;
     setTestStep(0);
     setRepeatStep(0);
     setProgressDots([]);
@@ -427,7 +429,7 @@ export function useTestFlow({ config, configUrl, audioEngine, onEvent, onAudioLo
   // Common props from framework + type-specific ui props from setup's return.
   let testComponent = null;
   let testProps = null;
-  if (config && testStep >= 0 && testStep < config.tests.length) {
+  if (config && testStep >= 0 && testStep < config.tests.length && uiPropsRef.current) {
     const test = config.tests[testStep];
     const crossfadeForced = currentTest?.crossfade ?? null;
     const { entry } = getTestType(test.testType);
