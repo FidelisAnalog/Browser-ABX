@@ -1,15 +1,18 @@
 /**
  * useTestFlow — test state machine hook.
- * Owns test flow, iteration setup, commitment creation, answer verification,
- * results accumulation, screen derivation, and prop construction.
+ * Owns the entire test lifecycle: audio fetch/decode, test flow, iteration setup,
+ * commitment creation, answer verification, results accumulation, screen derivation,
+ * and prop construction.
  *
  * Anti-cheat: _iterationMeta is module-level (invisible to React DevTools).
  * Trial records are private (trialRecordsRef), merged into results at completion.
  *
- * Reports lifecycle events via onEvent callback — never emits postMessage directly.
+ * Reports ALL lifecycle events via onEvent callback — never emits postMessage directly.
+ * Loading events fire synchronously from fetch callback (not through React state/effects).
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { loadAndValidate } from '../audio/audioLoader';
 import { shuffle } from '../utils/shuffle';
 import { getTestType } from '../utils/testTypeRegistry';
 import { createShareUrl } from '../utils/share';
@@ -32,14 +35,15 @@ let _iterationMeta = null;
  * @param {object} params
  * @param {object} params.config - Parsed config object
  * @param {string} [params.configUrl] - URL for share URL construction
- * @param {object} params.audioEngine - { audioInitialized, loadBuffers, setCrossfadeConfig, getChannelData }
+ * @param {object} params.audioEngine - { initialized, loadBuffers, setCrossfadeConfig, engineFacade, sampleRateInfo }
  * @param {(type: string, data: object) => void} params.onEvent - Lifecycle callback
+ * @param {({ decodedCache: Map, sampleRate: number }) => void} params.onAudioLoaded - Called when audio fetch/decode completes
  * @param {boolean} params.skipWelcome
  * @param {boolean} params.skipResults
  * @param {boolean} params.postResults
  */
-export function useTestFlow({ config, configUrl, audioEngine, onEvent, skipWelcome, skipResults, postResults }) {
-  const { audioInitialized, loadBuffers, setCrossfadeConfig, getChannelData } = audioEngine;
+export function useTestFlow({ config, configUrl, audioEngine, onEvent, onAudioLoaded, skipWelcome, skipResults, postResults }) {
+  const { initialized: audioInitialized, loadBuffers, setCrossfadeConfig } = audioEngine;
 
   // Test flow state
   const [form, setForm] = useState({});
@@ -80,6 +84,72 @@ export function useTestFlow({ config, configUrl, audioEngine, onEvent, skipWelco
 
   // Track whether completed event has been reported (prevent duplicates on re-render)
   const completedEmittedRef = useRef(false);
+
+  // --- Audio loading state ---
+  const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
+  const [audioError, setAudioError] = useState(null);
+  const decodedCacheRef = useRef(new Map());
+
+  // Extract unique audio URLs from config
+  const audioUrls = useMemo(() => {
+    if (!config) return [];
+    const urls = new Set();
+    for (const opt of config.options) {
+      urls.add(opt.audioUrl);
+    }
+    return Array.from(urls);
+  }, [config]);
+
+  // Fetch and decode all audio files
+  useEffect(() => {
+    if (audioUrls.length === 0) return;
+    const controller = new AbortController();
+
+    loadAndValidate(audioUrls, (loaded, total) => {
+      if (!controller.signal.aborted) {
+        // Emit loading event synchronously — bypasses React state/effect cycle
+        onEvent('loading', { loaded, total });
+        setLoadProgress({ loaded, total });
+      }
+    }, { signal: controller.signal })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        const cache = new Map();
+        for (let i = 0; i < audioUrls.length; i++) {
+          cache.set(audioUrls[i], data.decoded[i]);
+        }
+        decodedCacheRef.current = cache;
+        onAudioLoaded({ decodedCache: cache, sampleRate: data.sampleRate });
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return;
+        if (!controller.signal.aborted) {
+          setAudioError(err.message);
+          onEvent('error', { error: err.message });
+        }
+      });
+    return () => { controller.abort(); };
+  }, [audioUrls, onEvent, onAudioLoaded]);
+
+  /**
+   * Get channel 0 data for each option + extra waveform tracks.
+   * Derived from decoded cache, not AudioBuffers.
+   * @param {object} test - Test config object with options[] and testType
+   * @returns {Float32Array[]}
+   */
+  const getChannelData = useCallback((test) => {
+    const cache = decodedCacheRef.current;
+    if (cache.size === 0) return [];
+    const ch0 = test.options.map((opt) => {
+      const decoded = cache.get(opt.audioUrl);
+      return decoded ? decoded.samples[0] : new Float32Array(0);
+    });
+    const { entry } = getTestType(test.testType);
+    for (let extra = 0; extra < entry.waveformExtraTracks; extra++) {
+      if (ch0.length > 0) ch0.push(ch0[0]);
+    }
+    return ch0;
+  }, []);
 
   // Dynamic page title
   useEffect(() => {
@@ -643,7 +713,8 @@ export function useTestFlow({ config, configUrl, audioEngine, onEvent, skipWelco
     welcomeProps,
     resultsProps,
     sampleRateInfo: audioEngine.sampleRateInfo,
-    loadProgress: audioEngine.loadProgress,
+    loadProgress,
+    audioError,
     skipWelcome,
     skipResults,
   };

@@ -2,9 +2,13 @@
  * TestSession — test execution page.
  * Composes useAudioEngine + useTestFlow, renders the right screen.
  * No test logic, no state machines, no event emission.
+ *
+ * Wiring: useTestFlow fetches audio, reports decoded data via onAudioLoaded.
+ * TestSession stores it in state and passes to useAudioEngine, which creates the engine.
+ * useTestFlow receives the engine on the next render for loadBuffers/setCrossfadeConfig.
  */
 
-import { useMemo, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useAudioEngine } from '../hooks/useAudioEngine';
 import { useTestFlow } from '../hooks/useTestFlow';
@@ -13,16 +17,11 @@ import Results from './Results';
 import SampleRateInfo from './SampleRateInfo';
 
 export default function TestSession({ config, configUrl, postResults = true, skipWelcome = false, skipResults = false, onScreen, onTestEvent }) {
-  const audioUrls = useMemo(() => {
-    if (!config) return [];
-    const urls = new Set();
-    for (const opt of config.options) {
-      urls.add(opt.audioUrl);
-    }
-    return Array.from(urls);
-  }, [config]);
+  // Audio data produced by useTestFlow's fetch, consumed by useAudioEngine
+  const [audioData, setAudioData] = useState({ decodedCache: null, sampleRate: null });
+  const onAudioLoaded = useCallback((data) => setAudioData(data), []);
 
-  const audioEngine = useAudioEngine(audioUrls);
+  const audioEngine = useAudioEngine(audioData.decodedCache, audioData.sampleRate);
 
   const {
     screen,
@@ -32,11 +31,13 @@ export default function TestSession({ config, configUrl, postResults = true, ski
     resultsProps,
     sampleRateInfo,
     loadProgress,
+    audioError,
   } = useTestFlow({
     config,
     configUrl,
     audioEngine,
     onEvent: onTestEvent,
+    onAudioLoaded,
     skipWelcome,
     skipResults,
     postResults,
@@ -45,20 +46,13 @@ export default function TestSession({ config, configUrl, postResults = true, ski
   // Report screen to parent
   useEffect(() => { onScreen?.(screen); }, [screen, onScreen]);
 
-  // Report load progress as lifecycle event
-  useEffect(() => {
-    if (audioEngine.loadProgress.total > 0) {
-      onTestEvent('loading', { loaded: audioEngine.loadProgress.loaded, total: audioEngine.loadProgress.total });
-    }
-  }, [audioEngine.loadProgress.loaded, audioEngine.loadProgress.total, onTestEvent]);
-
   // --- Render ---
 
-  if (audioEngine.audioError) {
+  if (audioError) {
     return (
       <>
         <Typography color="error" variant="h6">Error</Typography>
-        <Typography>{audioEngine.audioError}</Typography>
+        <Typography>{audioError}</Typography>
       </>
     );
   }

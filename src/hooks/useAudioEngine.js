@@ -1,44 +1,32 @@
 /**
- * useAudioEngine — audio infrastructure hook.
- * Owns fetch, decode, engine creation, AudioBuffer map, engine facade, cleanup.
- * Knows nothing about tests, test types, or iterations.
+ * useAudioEngine — audio engine management hook.
+ * Creates AudioEngine from decoded audio data, manages AudioBuffer map,
+ * exposes facade, handles cleanup. No I/O — receives already-decoded data.
  *
- * @param {string[]} audioUrls - Unique audio file URLs to load
+ * @param {Map<string, DecodedAudio>|null} decodedCache - Decoded audio cache (url → DecodedAudio)
+ * @param {number|null} sampleRate - Audio sample rate
  * @returns {{
  *   engineFacade: object|null,
- *   audioBufferMap: Map|null,
- *   audioInitialized: boolean,
- *   audioError: string|null,
- *   loadProgress: { loaded: number, total: number },
+ *   initialized: boolean,
  *   sampleRateInfo: object|null,
- *   getChannelData: (test: object) => Float32Array[],
  *   loadBuffers: (bufferSources: object[]) => void,
  *   setCrossfadeConfig: (test: object|null) => void,
  * }}
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { loadAndValidate, createAudioBufferMap } from '../audio/audioLoader';
+import { useMemo, useEffect, useCallback, useRef } from 'react';
 import { AudioEngine } from '../audio/audioEngine';
-import { getTestType } from '../utils/testTypeRegistry';
+import { createAudioBufferMap } from '../audio/audioLoader';
 
-export function useAudioEngine(audioUrls) {
-  const [audioError, setAudioError] = useState(null);
-  const [audioSampleRate, setAudioSampleRate] = useState(null);
-  const [audioInitialized, setAudioInitialized] = useState(false);
-  const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
-
-  // Decoded audio cache: Map<url, DecodedAudio>
-  const decodedCacheRef = useRef(new Map());
-  // AudioBuffer cache: Map<url, AudioBuffer> — created once, reused every iteration
+export function useAudioEngine(decodedCache, sampleRate) {
+  const engineRef = useRef(null);
   const audioBufferMapRef = useRef(null);
 
-  // Create engine once when sample rate is known (synchronous, deterministic)
-  const engineRef = useRef(null);
-  if (audioSampleRate && !engineRef.current) {
-    engineRef.current = new AudioEngine(audioSampleRate);
+  // Create engine once when decoded data is available (synchronous, deterministic)
+  if (sampleRate && decodedCache && !engineRef.current) {
+    engineRef.current = new AudioEngine(sampleRate);
     audioBufferMapRef.current = createAudioBufferMap(
-      engineRef.current.context, decodedCacheRef.current
+      engineRef.current.context, decodedCache
     );
   }
   const engine = engineRef.current;
@@ -88,53 +76,6 @@ export function useAudioEngine(audioUrls) {
     };
   }, []);
 
-  // Load and decode all audio files once
-  useEffect(() => {
-    if (audioUrls.length === 0) return;
-    const controller = new AbortController();
-
-    loadAndValidate(audioUrls, (loaded, total) => {
-      if (!controller.signal.aborted) {
-        setLoadProgress({ loaded, total });
-      }
-    }, { signal: controller.signal })
-      .then((data) => {
-        if (controller.signal.aborted) return;
-        const cache = new Map();
-        for (let i = 0; i < audioUrls.length; i++) {
-          cache.set(audioUrls[i], data.decoded[i]);
-        }
-        decodedCacheRef.current = cache;
-        setAudioSampleRate(data.sampleRate);
-        setAudioInitialized(true);
-      })
-      .catch((err) => {
-        if (err.name === 'AbortError') return;
-        if (!controller.signal.aborted) setAudioError(err.message);
-      });
-    return () => { controller.abort(); };
-  }, [audioUrls]);
-
-  /**
-   * Get channel 0 data for each option + extra waveform tracks.
-   * Derived from decoded cache, not AudioBuffers.
-   * @param {object} test - Test config object with options[] and testType
-   * @returns {Float32Array[]}
-   */
-  const getChannelData = useCallback((test) => {
-    const cache = decodedCacheRef.current;
-    if (cache.size === 0) return [];
-    const ch0 = test.options.map((opt) => {
-      const decoded = cache.get(opt.audioUrl);
-      return decoded ? decoded.samples[0] : new Float32Array(0);
-    });
-    const { entry } = getTestType(test.testType);
-    for (let extra = 0; extra < entry.waveformExtraTracks; extra++) {
-      if (ch0.length > 0) ch0.push(ch0[0]);
-    }
-    return ch0;
-  }, []);
-
   /**
    * Look up pre-built AudioBuffers by URL and load into engine.
    * @param {object[]} bufferSources - Array of { audioUrl } objects
@@ -161,12 +102,8 @@ export function useAudioEngine(audioUrls) {
 
   return {
     engineFacade,
-    audioBufferMap: audioBufferMapRef.current,
-    audioInitialized,
-    audioError,
-    loadProgress,
+    initialized: !!engine,
     sampleRateInfo: engine ? engine.getSampleRateInfo() : null,
-    getChannelData,
     loadBuffers,
     setCrossfadeConfig,
   };
