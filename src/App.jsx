@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Box, ThemeProvider, Typography, createTheme, CssBaseline } from '@mui/material';
-import TestRunner from './components/TestRunner';
+import TestSession from './components/TestSession';
 import SharedResults from './components/SharedResults';
 import LandingPage from './components/LandingPage';
 import Layout from './components/Layout';
+import { useConfig } from './hooks/useConfig';
+import { useAppEvents } from './hooks/useAppEvents';
 import { normalizeConfig } from './utils/config';
-import { emitEvent } from './utils/events';
 import { isEmbedded } from './utils/embed';
 
 /** Shared palette values that work on both light and dark backgrounds */
@@ -123,8 +124,18 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Current screen reported by TestRunner (loading, welcome, test, results)
+  // Current screen reported by TestSession (loading, welcome, test, results)
   const [screen, setScreen] = useState(null);
+
+  // Content height reported by Layout (for acidtest:resize)
+  const [contentHeight, setContentHeight] = useState(null);
+  const onContentHeight = useCallback((h) => setContentHeight(h), []);
+
+  // Boundary adapter — single owner of all outbound postMessage
+  const { onTestEvent } = useAppEvents({ contentHeight });
+
+  // Standalone config loading (URL param)
+  const { config: standaloneConfig, configError } = useConfig(configUrl);
 
   // postMessage state — config received via postMessage from parent/opener
   const [postMessageConfig, setPostMessageConfig] = useState(null);
@@ -150,7 +161,7 @@ export default function App() {
           }
         } catch (err) {
           setPostMessageError(err.message);
-          emitEvent('acidtest:error', { error: err.message });
+          onTestEvent('error', { error: err.message });
         }
       } else if (e.data?.type === 'acidtest:theme') {
         // Live theme update from parent
@@ -162,20 +173,36 @@ export default function App() {
     };
 
     window.addEventListener('message', handler);
-    emitEvent('acidtest:ready');
-
     return () => window.removeEventListener('message', handler);
-  }, []);
+  }, [needsPostMessage, onTestEvent]);
 
-  // Determine content and screen for non-TestRunner routes
+  // Determine content and screen for non-TestSession routes
   let content;
-  let directScreen = null; // screen set directly (non-TestRunner routes)
+  let directScreen = null; // screen set directly (non-TestSession routes)
   if (shareParam) {
     directScreen = 'shared-results';
     content = <SharedResults shareParam={shareParam} />;
   } else if (configUrl) {
-    // TestRunner reports screen via onScreen callback
-    content = <TestRunner configUrl={configUrl} onScreen={setScreen} />;
+    if (configError) {
+      directScreen = 'error';
+      content = (
+        <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
+          <Typography color="error">{configError}</Typography>
+        </Box>
+      );
+    } else if (standaloneConfig) {
+      content = (
+        <TestSession
+          config={standaloneConfig}
+          configUrl={configUrl}
+          onScreen={setScreen}
+          onTestEvent={onTestEvent}
+        />
+      );
+    } else {
+      // Config still loading — TestSession will show loading screen
+      content = null;
+    }
   } else if (postMessageError) {
     directScreen = 'error';
     content = (
@@ -184,14 +211,14 @@ export default function App() {
       </Box>
     );
   } else if (postMessageConfig) {
-    // TestRunner reports screen via onScreen callback
     content = (
-      <TestRunner
+      <TestSession
         config={postMessageConfig}
         postResults={postMessageOptions.postResults}
         skipWelcome={postMessageOptions.skipWelcome}
         skipResults={postMessageOptions.skipResults}
         onScreen={setScreen}
+        onTestEvent={onTestEvent}
       />
     );
   } else {
@@ -199,13 +226,13 @@ export default function App() {
     content = <LandingPage />;
   }
 
-  // directScreen overrides TestRunner's screen for non-TestRunner routes
+  // directScreen overrides TestSession's screen for non-TestSession routes
   const activeScreen = directScreen || screen;
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Layout screen={activeScreen}>
+      <Layout screen={activeScreen} onContentHeight={onContentHeight}>
         {content}
       </Layout>
     </ThemeProvider>
