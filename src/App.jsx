@@ -16,8 +16,8 @@ const shared = {
   success: { light: '#66bb6a', main: '#43a047', dark: '#2e7d32' },
   error:   { light: '#ef5350', main: '#e53935', dark: '#c62828' },
   confidence: {
-    correct:   { sure: '#175C33', somewhat: '#279957', guessing: '#59C987' },
-    incorrect: { sure: '#7A1B15', somewhat: '#C42E22', guessing: '#E87B72' },
+    correct:   { sure: '#2ECC71', somewhat: '#1A8A4A', guessing: '#0D4D28' },
+    incorrect: { sure: '#E74C3C', somewhat: '#9B2A1A', guessing: '#561008' },
   },
 };
 
