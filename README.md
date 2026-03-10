@@ -277,7 +277,7 @@ In YAML, a space followed by `#` starts an inline comment. This means:
 - name: "DBTF #3"  # Correct — quotes preserve the full name
 ```
 
-If option names contain `#`, wrap them in quotes. DBT detects duplicate names caused by this and shows an error with a hint.
+If option names contain `#`, wrap them in quotes. acidtest.io detects duplicate names caused by this and shows an error with a hint.
 
 ### Cloud Storage Links
 
@@ -291,7 +291,7 @@ The audio pipeline is designed around one principle: **both tracks in a comparis
 
 ### Why Lossless Only
 
-DBT accepts only WAV and FLAC. Lossy codecs (MP3, AAC, OGG) introduce encoding artifacts that vary by encoder, bitrate, and codec version. If the goal is to compare two recordings, the decode step must not introduce its own differences.
+acidtest.io accepts only WAV and FLAC. Lossy codecs (MP3, AAC, OGG) introduce encoding artifacts that vary by encoder, bitrate, and codec version. If the goal is to compare two recordings, the decode step must not introduce its own differences.
 
 ### Why Custom Decoders
 
@@ -302,7 +302,7 @@ The Web Audio API provides `decodeAudioData()`, but its behavior varies across b
 - Format support is inconsistent (Safari does not decode FLAC via `decodeAudioData()`)
 - Bit depth handling varies
 
-For blind testing, deterministic decoding is essential. DBT uses:
+For blind testing, deterministic decoding is essential. acidtest.io uses:
 
 - **WAV:** A custom RIFF/WAVE parser supporting 8, 16, 24, and 32-bit PCM, 32 and 64-bit IEEE float, and WAVE_FORMAT_EXTENSIBLE headers
 - **FLAC:** A WebAssembly-based decoder (`@wasm-audio-decoders/flac`) for native-speed lossless decompression
@@ -415,6 +415,12 @@ https://yourdomain.com/?share=<encoded>
 
 The encoded data includes the test name, options, test definitions, and aggregate statistics. Staircase tests also include trial-by-trial data so the convergence plot renders from the share URL. If the original config URL is available, it is embedded in the payload; when the recipient opens the link, a "Take the Test" button appears if that config URL is still reachable. No server or external config file is required — share URLs are fully self-contained.
 
+## Embedding
+
+acidtest.io can be embedded in an iframe and controlled via `postMessage`. The parent page sends a test config as JSON; the app runs the test and posts events (including results) back. No server required.
+
+See [docs/embedding.md](docs/embedding.md) for the full integration guide, event reference, and working examples.
+
 ## Keyboard Shortcuts
 
 | Key | Action |
@@ -438,7 +444,7 @@ npm test          # Run test suite
 npm run build     # Production build to dist/
 ```
 
-**Stack:** React 18, Material UI 6, Vite 6, Vitest 3. No backend.
+**Stack:** React 18, Material UI 6, Vite 6, Vitest 3. No backend. Test types are implemented as plugins — see [docs/test-type-architecture.md](docs/test-type-architecture.md).
 
 **Deployment:** GitHub Pages via GitHub Actions on push to `main`. Any static hosting service works.
 
@@ -454,10 +460,13 @@ __engine.getSampleRateInfo()         // Check sample rates
 ```
 src/
   audio/        Audio engine, WAV/FLAC decoders, loader, hotkeys
-  components/   React components — test screens, results, stats display
+  components/   React components — test UI, results, stats display
+  hooks/        React hooks — useConfig, useTestFlow, useAudioEngine, useAppEvents
+  testTypes/    Test type plugin modules (AB, ABX, Triangle, SameDiff, Staircase)
   stats/        Statistical calculations
   utils/        Config parser, share encoding, test type registry
   waveform/     Waveform visualization
+  styles/       MUI theme
 dist/           Build output and example configs
 ```
 
@@ -472,4 +481,4 @@ dist/           Build output and example configs
 
 ## License
 
-MIT License. Copyright (c) 2026 John P. Jones III. See [LICENSE](LICENSE) for details.
+CPAL-1.0 License. Copyright (c) 2026 John P. Jones III. See [LICENSE](LICENSE) for details.

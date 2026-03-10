@@ -16,14 +16,14 @@ Point your iframe at `https://acidtest.io`. There is no need to self-host the SP
 
 ```html
 <iframe src="https://acidtest.io/" scrolling="no"
-  style="border:none; width:100%; height:auto; min-height:825px;"></iframe>
+  style="border:none; width:100%; height:auto; min-height:700px;"></iframe>
 ```
 
 | Property | Why |
 |---|---|
 | `border:none` | Removes the default iframe border. |
 | `scrolling="no"` | Prevents a scrollbar inside the iframe. The parent page's scrollbar handles everything. |
-| `height:auto; min-height:825px` | `height:auto` prevents the iframe from stretching beyond the content (no gap below). `min-height:825px` ensures enough room for the tallest test screen. |
+| `height:auto; min-height:700px` | `height:auto` prevents the iframe from stretching beyond the content (no gap below). `min-height:700px` ensures enough room for the test screen. Use the `acidtest:resize` event to dynamically adjust the iframe height as content changes. |
 
 For a seamless appearance, set the iframe's `background` to match your page background. Our dark theme uses `#121212` and light theme uses `#fff`.
 
@@ -113,7 +113,7 @@ The config object is the same structure as the YAML config, but as JSON. The app
 | Field | Required | Description |
 |---|---|---|
 | `name` | yes | Unique display name for this option. Tests reference options by name. |
-| `audioUrl` | yes | URL to the audio file (FLAC, WAV, MP3, etc.). Dropbox share links are auto-converted to direct download URLs. |
+| `audioUrl` | yes | URL to the audio file (WAV or FLAC only). Dropbox share links are auto-converted to direct download URLs. |
 | `tag` | no | Category label (e.g., `"Lossless"`, `"Lossy"`). Used in results display. |
 
 ### Test Fields
@@ -145,7 +145,7 @@ The config object is the same structure as the YAML config, but as JSON. The app
 | `2AFC-SD+C` | 2AFC-SD with confidence rating | 2 |
 | `2AFC-Staircase` | Adaptive staircase threshold test | 5+ |
 
-The `+C` suffix adds a confidence slider to each trial. Confidence values are included in the results data.
+The `+C` suffix adds confidence buttons (sure / somewhat sure / guessing) to each trial. Confidence values are included in the results data.
 
 Staircase tests use a `staircase` config object instead of `repeat`. See the main YAML documentation for staircase-specific fields.
 
@@ -210,11 +210,12 @@ Fired after each trial is submitted.
   "testName": "ABX: A vs B",
   "trialIndex": 4,
   "totalTests": 2,
-  "totalTrials": 10
+  "totalTrials": 10,
+  "isCorrect": true
 }
 ```
 
-`trialIndex` is 0-based (the trial that was just completed). `totalTrials` is `null` for adaptive tests (staircase) since the total isn't known in advance.
+`trialIndex` is 0-based (the trial that was just completed). `totalTrials` is `null` for adaptive tests (staircase) since the total isn't known in advance. `isCorrect` is `true`/`false` for tests with a correct answer, or `null` for preference tests (AB).
 
 ### `acidtest:completed`
 
@@ -330,7 +331,7 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
 <head><title>My Test</title></head>
 <body>
   <iframe id="testFrame" src="https://acidtest.io/" scrolling="no"
-    style="border:none; width:100%; height:auto; min-height:825px;"></iframe>
+    style="border:none; width:100%; height:auto; min-height:700px;"></iframe>
   <script>
     const config = {
       name: "Quick Test",
@@ -365,6 +366,24 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
   </script>
 </body>
 </html>
+```
+
+### `acidtest:resize`
+
+Fired when the app's content height changes. Use this to dynamically resize the iframe container so no scrollbar is needed inside the iframe.
+
+```json
+{ "type": "acidtest:resize", "height": 755 }
+```
+
+`height` is the content height in pixels. Update the iframe's container height to match:
+
+```js
+window.addEventListener('message', (e) => {
+  if (e.data?.type === 'acidtest:resize' && e.data.height) {
+    iframe.style.height = e.data.height + 'px';
+  }
+});
 ```
 
 ## Abandonment Tracking

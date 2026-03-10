@@ -72,9 +72,13 @@ Return an object whose keys will be merged into the test's result entry. For exa
 
 ### 5. UI Component
 
-The React component rendered during the test. Receives:
-- Common props from framework: `name`, `description`, `stepStr`, `channelData`, `crossfadeForced`, `onSubmit`, `iterationKey`, `progressDots`, `engine`
+The React component rendered during the test. Owns the full interaction area: track selector, answer mechanism, confidence buttons (if applicable), progress bar.
+
+Receives:
+- Common props from framework: `name`, `description`, `stepStr`, `onSubmit`, `iterationKey`, `progressDots`, `engine`
 - Type-specific props from `setup`'s `ui` return (spread directly)
+
+Note: `channelData` and `crossfadeForced` are NOT passed to type components — those go to TestPanel (the card frame shell that wraps the type component with AudioControls).
 
 The component calls `onSubmit(answerId, confidence)` when the user submits.
 
@@ -132,9 +136,16 @@ src/
     useTestFlow.js       ← Generic lifecycle engine (no type-specific code)
   components/
     TestSession.jsx      ← Composes useAudioEngine + useTestFlow, renders screens
-    ABTest.jsx           ← UI component for AB (to be unified in Phase 6b)
-    ABXTest.jsx          ← UI component for ABX
-    ...etc
+    TestPanel.jsx        ← Minimal card frame (Paper + AudioControls)
+    TestHeader.jsx       ← Shared: name + description + divider
+    ConfidenceButtons.jsx ← Shared: sure/somewhat/guessing button stack
+    FixedProgress.jsx    ← Shared: fixed-length progress dots (ABX, Triangle, etc.)
+    AdaptiveProgress.jsx ← Shared: dynamic-length progress bar (Staircase)
+    ABTest.jsx           ← UI component for AB
+    ABXTest.jsx          ← UI component for ABX and ABXY
+    TriangleTest.jsx     ← UI component for Triangle
+    SameDiffTest.jsx     ← UI component for Same/Different
+    StaircaseTest.jsx    ← UI component for Staircase
 ```
 
 ## How to Add a New Test Type
