@@ -15,14 +15,11 @@ export default function FixedProgress({ progressDots = [], totalIterations }) {
         let color = theme.palette.progress.pending;
         if (i < progressDots.length) {
           const d = progressDots[i];
-          if (!d.confidence) {
-            color = d.isCorrect ? theme.palette.success.dark : theme.palette.error.dark;
-          } else if (d.confidence === 'sure') {
-            color = d.isCorrect ? theme.palette.success.dark : theme.palette.error.dark;
-          } else if (d.confidence === 'somewhat') {
-            color = d.isCorrect ? theme.palette.success.main : theme.palette.error.main;
+          if (d.confidence) {
+            const outcome = d.isCorrect ? 'correct' : 'incorrect';
+            color = theme.palette.confidence[outcome][d.confidence];
           } else {
-            color = d.isCorrect ? theme.palette.success.light : theme.palette.error.light;
+            color = d.isCorrect ? theme.palette.progress.correct : theme.palette.progress.incorrect;
           }
         }
         return (

@@ -21,7 +21,7 @@ export default function AdaptiveProgress({ progressDots = [], minRemaining = 1 }
             height: 6,
             borderRadius: 1,
             backgroundColor: i < progressDots.length
-              ? (progressDots[i].isCorrect ? theme.palette.success.light : theme.palette.error.light)
+              ? (progressDots[i].isCorrect ? theme.palette.progress.correct : theme.palette.progress.incorrect)
               : theme.palette.progress.pending,
           }}
         />
