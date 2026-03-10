@@ -11,7 +11,7 @@ import { isEmbedded } from '../utils/embed';
 import { getBranding } from '../utils/branding';
 
 /** Consistent min-height for embedded mode — prevents jarring jumps between screens */
-const EMBEDDED_MIN_HEIGHT = 700;
+const EMBEDDED_MIN_HEIGHT = 755;
 
 export default function Layout({ screen, children, onContentHeight }) {
   const rootRef = useRef(null);
