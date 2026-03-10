@@ -11,6 +11,7 @@ dist/
 
 # Claude
 .claude/
+CLAUDE.md
 
 # Editor
 .vscode/
