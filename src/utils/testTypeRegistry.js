@@ -15,7 +15,6 @@
 
 import ABTest from '../components/ABTest';
 import ABXTest from '../components/ABXTest';
-import ABXYTest from '../components/ABXYTest';
 import TriangleTest from '../components/TriangleTest';
 import SameDiffTest from '../components/SameDiffTest';
 import StaircaseTest from '../components/StaircaseTest';
@@ -85,7 +84,7 @@ export const TEST_TYPES = {
     processSubmit: abxType.processSubmit,
     isComplete: abxType.isComplete,
     mergeResults: abxType.mergeResults,
-    testComponent: ABXYTest,
+    testComponent: ABXTest,
     statsComponent: ABXStats,
     computeStats: computeAbxStats,
     resultDataKey: 'userSelectionsAndCorrects',

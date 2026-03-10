@@ -44,9 +44,17 @@ export async function setup({ options, testConfig, isNewTest, testState, hasConf
     bufferSources = [...ordered, xOpt];
   }
 
+  const nOptions = ordered.length;
+  const trackCount = isABXY ? nOptions + 2 : nOptions + 1;
+  const mysteryIndices = isABXY
+    ? [nOptions, nOptions + 1]
+    : [nOptions];
+
   return {
     ui: {
       options: ordered,
+      trackCount,
+      mysteryIndices,
       totalIterations: testConfig.repeat,
       showConfidence: hasConfidence,
       showProgress: testConfig.showProgress,

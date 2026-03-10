@@ -15,6 +15,7 @@ import { useTestFlow } from '../hooks/useTestFlow';
 import Welcome from './Welcome';
 import Results from './Results';
 import SampleRateInfo from './SampleRateInfo';
+import TestPanel from './TestPanel';
 
 export default function TestSession({ config, configUrl, postResults = true, skipWelcome = false, skipResults = false, onScreen, onTestEvent }) {
   // Audio data produced by useTestFlow's fetch, consumed by useAudioEngine
@@ -97,7 +98,12 @@ export default function TestSession({ config, configUrl, postResults = true, ski
 
   // Test screen
   if (TestComponent && testProps) {
-    return <TestComponent {...testProps} engine={audioEngine.engineFacade} />;
+    const { channelData, crossfadeForced, ...typeProps } = testProps;
+    return (
+      <TestPanel engine={audioEngine.engineFacade} channelData={channelData} crossfadeForced={crossfadeForced}>
+        <TestComponent {...typeProps} engine={audioEngine.engineFacade} />
+      </TestPanel>
+    );
   }
 
   return null;
