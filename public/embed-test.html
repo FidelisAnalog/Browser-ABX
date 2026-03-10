@@ -124,8 +124,8 @@
     window.addEventListener('message', (e) => {
       const data = e.data;
       if (!data || typeof data.type !== 'string' || !data.type.startsWith('acidtest:')) return;
-      if (data.type === 'acidtest:resize' && data.contentHeight) {
-        document.getElementById('iframeContainer').style.height = data.contentHeight + 'px';
+      if (data.type === 'acidtest:resize' && data.height) {
+        document.getElementById('iframeContainer').style.height = data.height + 'px';
       }
       logEvent(data);
     });

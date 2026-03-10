@@ -15,10 +15,6 @@ const shared = {
   secondary: { main: '#f57c00' },
   success: { light: '#66bb6a', main: '#43a047', dark: '#2e7d32' },
   error:   { light: '#ef5350', main: '#e53935', dark: '#c62828' },
-  confidence: {
-    correct:   { sure: '#2ECC71', somewhat: '#1A8A4A', guessing: '#0D4D28' },
-    incorrect: { sure: '#E74C3C', somewhat: '#9B2A1A', guessing: '#561008' },
-  },
 };
 
 const lightPalette = {
@@ -27,6 +23,10 @@ const lightPalette = {
   background: { default: '#f6f6f6', paper: '#ffffff' },
   track: { main: '#424242', hover: '#616161', contrastText: '#ffffff' },
   progress: { pending: '#e0e0e0', correct: '#43a047', incorrect: '#e53935' },
+  confidence: {
+    correct:   { sure: '#1A8A4A', somewhat: '#2ECC71', guessing: '#85E0AC' },
+    incorrect: { sure: '#9B2A1A', somewhat: '#E74C3C', guessing: '#F1957D' },
+  },
   waveform: {
     fill:               '#1976d2',
     background:         '#f5f5f5',
@@ -51,6 +51,10 @@ const darkPalette = {
   background: { default: '#121212', paper: '#1e1e1e' },
   track: { main: '#9e9e9e', hover: '#bdbdbd', contrastText: '#000000' },
   progress: { pending: '#424242', correct: '#43a047', incorrect: '#e53935' },
+  confidence: {
+    correct:   { sure: '#2ECC71', somewhat: '#1A8A4A', guessing: '#0D4D28' },
+    incorrect: { sure: '#E74C3C', somewhat: '#9B2A1A', guessing: '#561008' },
+  },
   waveform: {
     fill:               '#42a5f5',
     background:         '#1a1a1a',
