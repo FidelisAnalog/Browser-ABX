@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Box, CircularProgress, Link, ThemeProvider, Typography, createTheme, CssBaseline } from '@mui/material';
-import TestRunner from './components/TestRunner';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Box, ThemeProvider, Typography, createTheme, CssBaseline } from '@mui/material';
+import TestSession from './components/TestSession';
 import SharedResults from './components/SharedResults';
 import LandingPage from './components/LandingPage';
+import Layout from './components/Layout';
+import { useConfig } from './hooks/useConfig';
+import { useAppEvents } from './hooks/useAppEvents';
 import { normalizeConfig } from './utils/config';
-import { emitEvent } from './utils/events';
 import { isEmbedded } from './utils/embed';
 
 /** Shared palette values that work on both light and dark backgrounds */
@@ -20,7 +22,11 @@ const lightPalette = {
   ...shared,
   background: { default: '#f6f6f6', paper: '#ffffff' },
   track: { main: '#424242', hover: '#616161', contrastText: '#ffffff' },
-  progress: { pending: '#e0e0e0' },
+  progress: { pending: '#e0e0e0', correct: '#43a047', incorrect: '#e53935' },
+  confidence: {
+    correct:   { sure: '#1A8A4A', somewhat: '#2ECC71', guessing: '#85E0AC' },
+    incorrect: { sure: '#9B2A1A', somewhat: '#E74C3C', guessing: '#F1957D' },
+  },
   waveform: {
     fill:               '#1976d2',
     background:         '#f5f5f5',
@@ -44,7 +50,11 @@ const darkPalette = {
   ...shared,
   background: { default: '#121212', paper: '#1e1e1e' },
   track: { main: '#9e9e9e', hover: '#bdbdbd', contrastText: '#000000' },
-  progress: { pending: '#424242' },
+  progress: { pending: '#424242', correct: '#43a047', incorrect: '#e53935' },
+  confidence: {
+    correct:   { sure: '#2ECC71', somewhat: '#1A8A4A', guessing: '#0D4D28' },
+    incorrect: { sure: '#E74C3C', somewhat: '#9B2A1A', guessing: '#561008' },
+  },
   waveform: {
     fill:               '#42a5f5',
     background:         '#1a1a1a',
@@ -109,11 +119,10 @@ export default function App() {
   // Ctrl+Shift+D to cycle: system → light → dark → system
   useEffect(() => {
     const handler = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      if (e.ctrlKey && e.shiftKey && e.key === 'T') {
         e.preventDefault();
         setThemeOverride((prev) => {
           const next = prev === 'system' ? 'light' : prev === 'light' ? 'dark' : 'system';
-          console.log(`[theme] ${next}${next === 'system' ? ` (${getSystemMode()})` : ''}`);
           return next;
         });
       }
@@ -122,8 +131,18 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Current screen reported by TestRunner (loading, welcome, test, results)
+  // Current screen reported by TestSession (loading, welcome, test, results)
   const [screen, setScreen] = useState(null);
+
+  // Content height reported by Layout (for acidtest:resize)
+  const [contentHeight, setContentHeight] = useState(null);
+  const onContentHeight = useCallback((h) => setContentHeight(h), []);
+
+  // Boundary adapter — single owner of all outbound postMessage
+  const { onTestEvent } = useAppEvents({ contentHeight });
+
+  // Standalone config loading (URL param)
+  const { config: standaloneConfig, configError } = useConfig(configUrl);
 
   // postMessage state — config received via postMessage from parent/opener
   const [postMessageConfig, setPostMessageConfig] = useState(null);
@@ -149,7 +168,7 @@ export default function App() {
           }
         } catch (err) {
           setPostMessageError(err.message);
-          emitEvent('acidtest:error', { error: err.message });
+          onTestEvent('error', { error: err.message });
         }
       } else if (e.data?.type === 'acidtest:theme') {
         // Live theme update from parent
@@ -161,54 +180,68 @@ export default function App() {
     };
 
     window.addEventListener('message', handler);
-    emitEvent('acidtest:ready');
-
     return () => window.removeEventListener('message', handler);
-  }, []);
+  }, [needsPostMessage, onTestEvent]);
 
+  // Determine content and screen for non-TestSession routes
   let content;
+  let directScreen = null; // screen set directly (non-TestSession routes)
   if (shareParam) {
-    // Self-contained shared results view
+    directScreen = 'shared-results';
     content = <SharedResults shareParam={shareParam} />;
   } else if (configUrl) {
-    // Standalone YAML config (works in iframe or standalone)
-    content = <TestRunner configUrl={configUrl} onScreen={setScreen} />;
+    if (configError) {
+      directScreen = 'error';
+      content = (
+        <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
+          <Typography color="error">{configError}</Typography>
+        </Box>
+      );
+    } else if (standaloneConfig) {
+      content = (
+        <TestSession
+          config={standaloneConfig}
+          configUrl={configUrl}
+          onScreen={setScreen}
+          onTestEvent={onTestEvent}
+        />
+      );
+    } else {
+      // Config still loading — TestSession will show loading screen
+      content = null;
+    }
   } else if (postMessageError) {
-    // postMessage config failed
+    directScreen = 'error';
     content = (
-      <Box display="flex" justifyContent="center" alignItems="center" p={3}>
+      <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
         <Typography color="error">{postMessageError}</Typography>
       </Box>
     );
   } else if (postMessageConfig) {
-    // Config received via postMessage
     content = (
-      <TestRunner
+      <TestSession
         config={postMessageConfig}
         postResults={postMessageOptions.postResults}
         skipWelcome={postMessageOptions.skipWelcome}
         skipResults={postMessageOptions.skipResults}
         onScreen={setScreen}
+        onTestEvent={onTestEvent}
       />
     );
   } else {
+    directScreen = 'landing';
     content = <LandingPage />;
   }
+
+  // directScreen overrides TestSession's screen for non-TestSession routes
+  const activeScreen = directScreen || screen;
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      {content}
-      {isEmbedded && screen === 'test' && (
-        <Box textAlign="center" mt={-2} pb={0.5}>
-          <Typography variant="caption" color="text.secondary">
-            powered by{' '}
-            <Link href="https://acidtest.io" target="_blank" rel="noopener" color="inherit" underline="hover">
-              acidtest.io
-            </Link>
-          </Typography>
-        </Box>
-      )}
+      <Layout screen={activeScreen} onContentHeight={onContentHeight}>
+        {content}
+      </Layout>
     </ThemeProvider>
   );
 }

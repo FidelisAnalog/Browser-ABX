@@ -2,12 +2,11 @@
  * SharedResults — displays results decoded from a self-contained share URL.
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
-import { Box, Button, Container, Link, Typography } from '@mui/material';
+import { useMemo, useState, useEffect } from 'react';
+import { Box, Button, Link, Typography } from '@mui/material';
 import { decodeShareParam } from '../utils/share';
 import { rawLink } from '../utils/config';
 import Results from './Results';
-import { isEmbedded } from '../utils/embed';
 
 /**
  * @param {object} props
@@ -41,39 +40,35 @@ export default function SharedResults({ shareParam }) {
 
   if (error) {
     return (
-      <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={4}>
-        <Container maxWidth="md">
-          <Typography color="error" variant="h6">Error</Typography>
-          <Typography>{error}</Typography>
-        </Container>
-      </Box>
+      <>
+        <Typography color="error" variant="h6">Error</Typography>
+        <Typography>{error}</Typography>
+      </>
     );
   }
 
   return (
-    <Box sx={{ minHeight: isEmbedded ? undefined : '100vh' }} pt={2} pb={2}>
-      <Container maxWidth="md">
-        <Results
-          description={null}
-          results={[]}
-          config={config}
-          precomputedStats={stats}
-        />
-        {testUrl && (
-          <Box textAlign="center" mt={3}>
-            <Button
-              component={Link}
-              href={testUrl}
-              target="_blank"
-              variant="contained"
-              color="secondary"
-              size="large"
-            >
-              Take the Test
-            </Button>
-          </Box>
-        )}
-      </Container>
-    </Box>
+    <>
+      <Results
+        description={null}
+        results={[]}
+        config={config}
+        precomputedStats={stats}
+      />
+      {testUrl && (
+        <Box textAlign="center" mt={3}>
+          <Button
+            component={Link}
+            href={testUrl}
+            target="_blank"
+            variant="contained"
+            color="secondary"
+            size="large"
+          >
+            Take the Test
+          </Button>
+        </Box>
+      )}
+    </>
   );
 }

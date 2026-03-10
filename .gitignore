@@ -34,6 +34,7 @@ yarn-error.log*
 coverage/
 
 # Test audio files and configs (local only)
+test-audio/
 public/test-audio/
 public/*-test*.yml
 public/*-baseline*.yml
