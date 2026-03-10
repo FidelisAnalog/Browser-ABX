@@ -119,11 +119,10 @@ export default function App() {
   // Ctrl+Shift+D to cycle: system → light → dark → system
   useEffect(() => {
     const handler = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      if (e.ctrlKey && e.shiftKey && e.key === 'T') {
         e.preventDefault();
         setThemeOverride((prev) => {
           const next = prev === 'system' ? 'light' : prev === 'light' ? 'dark' : 'system';
-          console.log(`[theme] ${next}${next === 'system' ? ` (${getSystemMode()})` : ''}`);
           return next;
         });
       }
