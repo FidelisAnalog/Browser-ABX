@@ -83,8 +83,10 @@ export class AudioEngine {
     // Loop boundary fade — dips gain to zero around each native loop splice
     // to eliminate clicks from waveform discontinuities at loopEnd→loopStart.
     this._loopFadeDuration = 0.003; // 3ms fade-out + 3ms fade-in
-    this._loopFadeCount = 100;      // wraps to pre-schedule per play/seek/switch
+    this._loopFadeCount = 100;      // wraps to pre-schedule per batch
+    this._loopFadeRefillAt = 90;    // schedule next batch when this many wraps have elapsed
     this._activeLoopFadeGain = null;
+    this._loopFadeTimer = null;
 
     // Crossfade
     this._crossfadeEnabled = false;
@@ -854,6 +856,17 @@ export class AudioEngine {
 
       wrapContextTime += loopDur;
     }
+
+    // Lazy refill timer — fires at wrap 90, schedules 100 more from where this batch ends.
+    // Not timing-critical: 10 wraps of runway remain (minimum 5s at shortest 500ms loop).
+    clearTimeout(this._loopFadeTimer);
+    const refillTime = wrapContextTime - ((this._loopFadeCount - this._loopFadeRefillAt) * loopDur);
+    const refillDelay = (refillTime - this._context.currentTime) * 1000;
+    if (refillDelay > 0) {
+      this._loopFadeTimer = setTimeout(() => {
+        this._scheduleLoopFades(loopFadeGain, this._loopStart, wrapContextTime - loopDur);
+      }, refillDelay);
+    }
   }
 
   /**
@@ -861,6 +874,8 @@ export class AudioEngine {
    * and restore its loopFadeGain to full volume.
    */
   _clearLoopFades() {
+    clearTimeout(this._loopFadeTimer);
+    this._loopFadeTimer = null;
     if (!this._activeLoopFadeGain) return;
     const now = this._context.currentTime;
     const gain = this._activeLoopFadeGain.gain;
