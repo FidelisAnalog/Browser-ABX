@@ -27,6 +27,21 @@ Point your iframe at `https://acidtest.io`. There is no need to self-host the SP
 
 For a seamless appearance, set the iframe's `background` to match your page background. Our dark theme uses `#121212` and light theme uses `#fff`.
 
+## Safari Audio Cleanup
+
+Safari can retain stale audio pipeline state from a previous iframe across page navigations and reloads. This can cause audio playback to be delayed by several hundred milliseconds relative to the visual playhead. To prevent this, destroy the iframe when the user navigates away:
+
+```html
+<script>
+window.addEventListener('pagehide', function() {
+  var iframe = document.querySelector('iframe[src*="acidtest.io"]');
+  if (iframe) iframe.src = 'about:blank';
+});
+</script>
+```
+
+This forces Safari to tear down the audio context cleanly. When the user returns, the iframe reloads fresh. This only affects Safari — Chrome and Firefox are not affected.
+
 ## Handshake
 
 1. Parent creates an iframe pointing at `https://acidtest.io` (no query params)
