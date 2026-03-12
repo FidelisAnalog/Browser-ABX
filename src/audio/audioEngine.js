@@ -33,6 +33,7 @@ export class AudioEngine {
     // Create context at source file sample rate
     this._context = new AudioContext({ sampleRate, latencyHint: 'interactive' });
     this._contextRate = this._context.sampleRate;
+    window.__audioCtx = this._context; // temporary debug — remove after latency investigation
 
     // Prevent bfcache — ensures the page (and AudioContext) is fully destroyed
     // on navigation rather than cached in a half-alive state that leaks audio.
@@ -885,8 +886,15 @@ export class AudioEngine {
 
   _startAnimation() {
     if (this._animFrameId) return; // Already running
+    let _debugCounter = 0; // temporary debug — remove after latency investigation
     const animate = () => {
       this._currentTimeRef.current = this.currentTime;
+      // temporary debug — log output timestamp delta every 60 frames (~1s)
+      if (++_debugCounter % 60 === 0) {
+        const ots = this._context.getOutputTimestamp();
+        const delta = this._context.currentTime - ots.contextTime;
+        console.log(`[latency] render: ${this._context.currentTime.toFixed(4)}  output: ${ots.contextTime.toFixed(4)}  delta: ${(delta * 1000).toFixed(1)}ms`);
+      }
       this._animFrameId = requestAnimationFrame(animate);
     };
     this._animFrameId = requestAnimationFrame(animate);
