@@ -15,7 +15,8 @@ import { downsampleRange } from './generateWaveform';
 
 const OVERVIEW_HEIGHT = 30;
 const PLAYHEAD_WIDTH = 1.5;
-const HANDLE_WIDTH = 6; // px hit area on viewport edges
+const HANDLE_WIDTH = 20; // px hit area on viewport edges
+const CURSOR_WIDTH = 6;  // px cursor zone for mouse (narrower than hit area)
 
 /**
  * @param {object} props
@@ -138,10 +139,11 @@ const OverviewBar = React.memo(function OverviewBar({
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
 
-    // Determine what was clicked
-    if (Math.abs(x - vpLeft) <= HANDLE_WIDTH) {
+    // Determine what was clicked — narrow hit zone for mouse, wide for touch
+    const hitWidth = e.pointerType === 'mouse' ? CURSOR_WIDTH : HANDLE_WIDTH;
+    if (Math.abs(x - vpLeft) <= hitWidth) {
       draggingRef.current = 'left';
-    } else if (Math.abs(x - vpRight) <= HANDLE_WIDTH) {
+    } else if (Math.abs(x - vpRight) <= hitWidth) {
       draggingRef.current = 'right';
     } else if (x >= vpLeft && x <= vpRight) {
       draggingRef.current = 'pan';
@@ -172,7 +174,7 @@ const OverviewBar = React.memo(function OverviewBar({
       cursor = 'col-resize';
     } else if (draggingRef.current === 'pan') {
       cursor = 'grabbing';
-    } else if (Math.abs(x - vpLeft) <= HANDLE_WIDTH || Math.abs(x - vpRight) <= HANDLE_WIDTH) {
+    } else if (Math.abs(x - vpLeft) <= CURSOR_WIDTH || Math.abs(x - vpRight) <= CURSOR_WIDTH) {
       cursor = 'col-resize';
     } else if (x >= vpLeft && x <= vpRight) {
       cursor = 'grab';
@@ -237,6 +239,7 @@ const OverviewBar = React.memo(function OverviewBar({
         width: '100%',
         position: 'relative',
         userSelect: 'none',
+        WebkitTouchCallout: 'none',
         WebkitTapHighlightColor: 'transparent',
         borderRadius: '4px 4px 0 0',
         border: `1px solid ${theme.palette.waveform.border}`,
