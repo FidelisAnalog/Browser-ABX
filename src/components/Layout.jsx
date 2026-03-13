@@ -56,10 +56,10 @@ export default function Layout({ screen, children, onContentHeight }) {
         minHeight: isEmbedded ? `${EMBEDDED_MIN_HEIGHT}px` : '100dvh',
       }}
     >
-      {/* Header slot — reserved for future branding */}
-      {branding.header && (
-        <Box>{/* header content will go here */}</Box>
-      )}
+      {/* Test deploy indicator — remove before merging to main */}
+      <Typography variant="caption" sx={{ textAlign: 'center', opacity: 0.4, py: 0.5 }}>
+        test-deploy-1
+      </Typography>
 
       {/* Content area — grows to fill available space */}
       <Container
