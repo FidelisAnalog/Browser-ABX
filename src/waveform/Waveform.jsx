@@ -13,7 +13,7 @@
  * including at the edges of the waveform.
  */
 
-import React, { useMemo, useRef, useCallback, useState, useEffect, useImperativeHandle } from 'react';
+import React, { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect, useImperativeHandle } from 'react';
 import { Box, useTheme } from '@mui/material';
 import { averageChannels, downsampleRange } from './generateWaveform';
 import LoopRegion from './LoopRegion';
@@ -29,6 +29,7 @@ const TOTAL_HEIGHT = WAVEFORM_HEIGHT + TIMELINE_HEIGHT;
 // Start handle extends left, end handle extends right.
 const HIT_OUTWARD = 40;  // px extending away from loop region
 const HIT_INWARD = 4;    // px extending into loop region
+const HIT_MOUSE = 8;     // px hit zone for mouse (narrower than touch)
 const MIN_LOOP = 0.5;    // minimum loop duration in seconds
 
 // Zoom constraints
@@ -64,7 +65,6 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   const scrollRef = useRef(null);
   const scrollCausedViewChangeRef = useRef(false);
   const programmaticScrollRef = useRef(false);
-  const scrollEndTimerRef = useRef(null);
 
   // Refs so pointer handlers always read current values (no stale closures)
   const loopRegionRef = useRef(loopRegion);
@@ -85,6 +85,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   // --- Playhead follow state ---
   const followActiveRef = useRef(false);
   const gestureActiveRef = useRef(false);
+  const overviewDraggingRef = useRef(false);
 
   // Reset zoom when duration changes (new test loaded)
   useEffect(() => {
@@ -554,6 +555,8 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         programmaticScrollRef.current = false;
         return;
       }
+      // Skip scroll-driven updates during overview bar drag
+      if (overviewDraggingRef.current) return;
       const dur = durationRef.current;
       const vs = viewStartRef.current;
       const ve = viewEndRef.current;
@@ -591,10 +594,16 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   }, [setUserView, checkFollowEngage, containerWidth]);
 
   // --- View → scroll sync (zoom, seek, playhead follow update scroll position) ---
+  // useLayoutEffect so scrollLeft is written in the same commit as the spacer
+  // resize — before the browser processes scroll clamping from the resize.
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // During overview bar drags, the view is driven by React state (not scroll).
+    // Skip scroll sync — the scrolling thread can do whatever it wants.
+    // Correct scrollLeft is written at gesture end.
+    if (overviewDraggingRef.current) return;
     if (scrollCausedViewChangeRef.current) {
       scrollCausedViewChangeRef.current = false;
       return;
@@ -680,6 +689,14 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
 
   const handlePointerDown = useCallback(
     (handle) => (e) => {
+      // For mouse, narrow the effective hit zone around the handle line
+      if (e.pointerType === 'mouse') {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        // Handle line is at HIT_INWARD from the inner edge of the div
+        const lineX = handle === 'start' ? rect.width - HIT_INWARD : HIT_INWARD;
+        if (Math.abs(localX - lineX) > HIT_MOUSE) return;
+      }
       e.preventDefault();
       e.stopPropagation();
       e.target.setPointerCapture(e.pointerId);
@@ -769,9 +786,28 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   // Overview bar gesture callbacks
   const handleOverviewGestureStart = useCallback(() => {
     gestureActiveRef.current = true;
+    overviewDraggingRef.current = true;
   }, []);
   const handleOverviewGestureEnd = useCallback(() => {
     gestureActiveRef.current = false;
+    overviewDraggingRef.current = false;
+    // Write correct scrollLeft now that the drag is done.
+    // The useLayoutEffect skips writes during overview drags, so scrollLeft
+    // may be stale. Sync it to the final view position.
+    const el = scrollRef.current;
+    if (el) {
+      const dur = durationRef.current;
+      const vs = viewStartRef.current;
+      const ve = viewEndRef.current;
+      const viewDur = ve - vs;
+      const w = widthRef.current;
+      if (dur > 0 && w > 0 && viewDur < dur - 0.001) {
+        const spacerW = w * (dur / viewDur);
+        const maxSL = spacerW - w;
+        programmaticScrollRef.current = true;
+        el.scrollLeft = (vs / (dur - viewDur)) * maxSL;
+      }
+    }
     checkFollowEngage();
   }, [checkFollowEngage]);
 
@@ -897,11 +933,22 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
               left: startHitLeft,
               width: startHitRight - startHitLeft,
               height: '100%',
-              cursor: 'col-resize',
+              cursor: 'default',
               touchAction: 'none',
               pointerEvents: 'auto',
+              userSelect: 'none',
+              WebkitTouchCallout: 'none',
             }}
-          />}
+          >
+            {/* Narrow cursor zone for mouse — centered on handle line */}
+            <div style={{
+              position: 'absolute',
+              right: 0,
+              width: 8,
+              height: '100%',
+              cursor: 'col-resize',
+            }} />
+          </div>}
           {/* End handle hit area — biased right (outward) */}
           {endHitVisible && <div
             onPointerDown={handlePointerDown('end')}
@@ -912,11 +959,22 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
               left: endHitLeft,
               width: endHitRight - endHitLeft,
               height: '100%',
-              cursor: 'col-resize',
+              cursor: 'default',
               touchAction: 'none',
               pointerEvents: 'auto',
+              userSelect: 'none',
+              WebkitTouchCallout: 'none',
             }}
-          />}
+          >
+            {/* Narrow cursor zone for mouse — centered on handle line */}
+            <div style={{
+              position: 'absolute',
+              left: 0,
+              width: 8,
+              height: '100%',
+              cursor: 'col-resize',
+            }} />
+          </div>}
         </div>
 
       </>}
