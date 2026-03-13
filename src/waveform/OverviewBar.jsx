@@ -237,6 +237,7 @@ const OverviewBar = React.memo(function OverviewBar({
         width: '100%',
         position: 'relative',
         userSelect: 'none',
+        WebkitTapHighlightColor: 'transparent',
         borderRadius: '4px 4px 0 0',
         border: `1px solid ${theme.palette.waveform.border}`,
         borderBottom: 'none',

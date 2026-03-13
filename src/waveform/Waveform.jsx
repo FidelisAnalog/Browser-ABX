@@ -795,6 +795,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         width: '100%',
         position: 'relative',
         userSelect: 'none',
+        WebkitTapHighlightColor: 'transparent',
         overscrollBehaviorX: 'none',
         cursor: 'pointer',
         borderRadius: 1,
@@ -814,7 +815,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
           overflowY: 'hidden',
           overscrollBehaviorX: 'none',
           WebkitOverflowScrolling: 'touch',
-          touchAction: 'pan-x',
+          touchAction: 'pan-x pan-y',
           scrollbarWidth: 'none',
           '&::-webkit-scrollbar': { display: 'none' },
         }}
