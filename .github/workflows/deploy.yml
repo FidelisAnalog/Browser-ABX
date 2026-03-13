@@ -25,15 +25,68 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      # Build main → dist/
       - run: npm ci
       - run: npm run build
       - run: npm test
+
+      # Build test branch → dist/test/ (skip if branch doesn't exist)
+      - name: Check for test branch
+        id: check-test
+        run: |
+          if git ls-remote --heads origin test | grep -q test; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout test branch
+        if: steps.check-test.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: test
+          path: test-branch
+
+      - name: Build test branch
+        if: steps.check-test.outputs.exists == 'true'
+        run: cd test-branch && npm ci && npm run build && npm test
+
+      - name: Move test build into dist/test/
+        if: steps.check-test.outputs.exists == 'true'
+        run: mv test-branch/dist dist/test
+
+      # Build preview branch → dist/preview/ (skip if branch doesn't exist)
+      - name: Check for preview branch
+        id: check-preview
+        run: |
+          if git ls-remote --heads origin preview | grep -q preview; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout preview branch
+        if: steps.check-preview.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: preview
+          path: preview-branch
+
+      - name: Build preview branch
+        if: steps.check-preview.outputs.exists == 'true'
+        run: cd preview-branch && npm ci && npm run build && npm test
+
+      - name: Move preview build into dist/preview/
+        if: steps.check-preview.outputs.exists == 'true'
+        run: mv preview-branch/dist dist/preview
 
       - uses: actions/upload-pages-artifact@v3
         with:
