@@ -9,9 +9,9 @@
  * - Click outside the viewport to recenter on that position
  */
 
-import React, { useMemo, useRef, useEffect, useState, useId } from 'react';
+import React, { useMemo, useRef, useEffect, useState, useCallback, useId } from 'react';
 import { Box, useTheme } from '@mui/material';
-import { downsampleRange } from './generateWaveform';
+import { downsampleRange, buildEnvelopePath, isFullRange, isViewZoomed } from './generateWaveform';
 
 const OVERVIEW_HEIGHT = 30;
 const PLAYHEAD_WIDTH = 1.5;
@@ -52,6 +52,20 @@ const OverviewBar = React.memo(function OverviewBar({
   const containerWidthRef = useRef(containerWidth);
   containerWidthRef.current = containerWidth;
   const dragStartRef = useRef({ x: 0, viewStart: 0, viewEnd: 0 });
+
+  // Refs so pointer handlers always read current values (no stale closures)
+  const viewStartRef = useRef(viewStart);
+  viewStartRef.current = viewStart;
+  const viewEndRef = useRef(viewEnd);
+  viewEndRef.current = viewEnd;
+  const vpLeftRef = useRef(0);
+  const vpRightRef = useRef(0);
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+  const onGestureStartRef = useRef(onGestureStart);
+  onGestureStartRef.current = onGestureStart;
+  const onGestureEndRef = useRef(onGestureEnd);
+  onGestureEndRef.current = onGestureEnd;
 
   // Measure container width
   useEffect(() => {
@@ -94,139 +108,133 @@ const OverviewBar = React.memo(function OverviewBar({
   );
 
   // Build SVG path
-  const waveformPath = useMemo(() => {
-    if (waveformData.length === 0 || containerWidth <= 0) return '';
-
-    const midY = OVERVIEW_HEIGHT / 2;
-    const scale = OVERVIEW_HEIGHT / 2;
-    const barWidth = containerWidth / waveformData.length;
-
-    let upper = `M 0 ${midY}`;
-    for (let i = 0; i < waveformData.length; i++) {
-      const x = i * barWidth;
-      const y = midY - waveformData[i].max * scale;
-      upper += ` L ${x} ${y}`;
-    }
-    upper += ` L ${containerWidth} ${midY}`;
-
-    let lower = '';
-    for (let i = waveformData.length - 1; i >= 0; i--) {
-      const x = i * barWidth;
-      const y = midY - waveformData[i].min * scale;
-      lower += ` L ${x} ${y}`;
-    }
-
-    return upper + lower + ' Z';
-  }, [waveformData, containerWidth]);
+  const waveformPath = useMemo(
+    () => buildEnvelopePath(waveformData, containerWidth, OVERVIEW_HEIGHT),
+    [waveformData, containerWidth]
+  );
 
   // Viewport rectangle position
   const vpLeft = duration > 0 ? (viewStart / duration) * containerWidth : 0;
   const vpRight = duration > 0 ? (viewEnd / duration) * containerWidth : containerWidth;
   const vpWidth = vpRight - vpLeft;
+  vpLeftRef.current = vpLeft;
+  vpRightRef.current = vpRight;
 
   // Detect zoom for viewport overlay visibility
-  const isZoomed = viewStart > 0.001 || viewEnd < duration - 0.001;
+  const isZoomed = isViewZoomed(viewStart, viewEnd, duration);
 
   // Convert x pixel to time
-  const xToTime = (x) => duration > 0 ? Math.max(0, Math.min((x / containerWidth) * duration, duration)) : 0;
+  const xToTime = useCallback(
+    (x) => duration > 0 ? Math.max(0, Math.min((x / containerWidth) * duration, duration)) : 0,
+    [duration, containerWidth]
+  );
 
   // --- Pointer handlers ---
 
-  const handlePointerDown = (e) => {
-    e.preventDefault();
-    e.target.setPointerCapture(e.pointerId);
-    if (onGestureStart) onGestureStart();
+  const updateCursor = useCallback((e) => {
+    if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
+    const vl = vpLeftRef.current;
+    const vr = vpRightRef.current;
+    let cursor = 'pointer';
+    if (draggingRef.current === 'left' || draggingRef.current === 'right') {
+      cursor = 'col-resize';
+    } else if (draggingRef.current === 'pan') {
+      cursor = 'grabbing';
+    } else if (Math.abs(x - vl) <= CURSOR_WIDTH || Math.abs(x - vr) <= CURSOR_WIDTH) {
+      cursor = 'col-resize';
+    } else if (x >= vl && x <= vr) {
+      cursor = 'grab';
+    }
+    containerRef.current.style.cursor = cursor;
+  }, []);
+
+  const handlePointerDown = useCallback((e) => {
+    e.preventDefault();
+    e.target.setPointerCapture(e.pointerId);
+    if (onGestureStartRef.current) onGestureStartRef.current();
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const dur = durationRef.current;
+    const w = containerWidthRef.current;
+    const vl = vpLeftRef.current;
+    const vr = vpRightRef.current;
+    const vs = viewStartRef.current;
+    const ve = viewEndRef.current;
 
     // Determine what was clicked — narrow hit zone for mouse, wide for touch
     const hitWidth = e.pointerType === 'mouse' ? CURSOR_WIDTH : HANDLE_WIDTH;
-    if (Math.abs(x - vpLeft) <= hitWidth) {
+    if (Math.abs(x - vl) <= hitWidth) {
       draggingRef.current = 'left';
-    } else if (Math.abs(x - vpRight) <= hitWidth) {
+    } else if (Math.abs(x - vr) <= hitWidth) {
       draggingRef.current = 'right';
-    } else if (x >= vpLeft && x <= vpRight) {
+    } else if (x >= vl && x <= vr) {
       draggingRef.current = 'pan';
     } else {
       // Click/tap outside viewport — recenter
-      const clickTime = xToTime(x);
-      const viewDur = viewEnd - viewStart;
+      const clickTime = dur > 0 ? Math.max(0, Math.min((x / w) * dur, dur)) : 0;
+      const viewDur = ve - vs;
       let newStart = clickTime - viewDur / 2;
       let newEnd = clickTime + viewDur / 2;
       if (newStart < 0) { newStart = 0; newEnd = viewDur; }
-      if (newEnd > duration) { newEnd = duration; newStart = Math.max(0, duration - viewDur); }
-      onViewChange(newStart, newEnd);
+      if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
+      onViewChangeRef.current(newStart, newEnd);
       // Start panning from the recentered position
       draggingRef.current = 'pan';
       dragStartRef.current = { x, viewStart: newStart, viewEnd: newEnd };
       return;
     }
 
-    dragStartRef.current = { x, viewStart, viewEnd };
-  };
+    dragStartRef.current = { x, viewStart: vs, viewEnd: ve };
+  }, []);
 
-  const updateCursor = (e) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    let cursor = 'pointer';
-    if (draggingRef.current === 'left' || draggingRef.current === 'right') {
-      cursor = 'col-resize';
-    } else if (draggingRef.current === 'pan') {
-      cursor = 'grabbing';
-    } else if (Math.abs(x - vpLeft) <= CURSOR_WIDTH || Math.abs(x - vpRight) <= CURSOR_WIDTH) {
-      cursor = 'col-resize';
-    } else if (x >= vpLeft && x <= vpRight) {
-      cursor = 'grab';
-    }
-    containerRef.current.style.cursor = cursor;
-  };
-
-  const handlePointerMove = (e) => {
+  const handlePointerMove = useCallback((e) => {
     updateCursor(e);
     if (!draggingRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const dx = x - dragStartRef.current.x;
-    const dTime = (dx / containerWidth) * duration;
+    const dur = durationRef.current;
+    const w = containerWidthRef.current;
+    const dTime = (dx / w) * dur;
     const origStart = dragStartRef.current.viewStart;
     const origEnd = dragStartRef.current.viewEnd;
     const origDur = origEnd - origStart;
+    const onChange = onViewChangeRef.current;
 
     if (draggingRef.current === 'pan') {
       let newStart = origStart + dTime;
       let newEnd = origEnd + dTime;
       if (newStart < 0) { newStart = 0; newEnd = origDur; }
-      if (newEnd > duration) { newEnd = duration; newStart = Math.max(0, duration - origDur); }
-      onViewChange(newStart, newEnd);
+      if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - origDur); }
+      onChange(newStart, newEnd);
     } else if (draggingRef.current === 'left') {
       let newStart = Math.max(0, origStart + dTime);
       if (newStart > origEnd) {
-        // Crossed over — swap to dragging right edge, reset drag origin
         draggingRef.current = 'right';
-        dragStartRef.current = { x, viewStart: origEnd, viewEnd: Math.min(duration, newStart) };
-        onViewChange(origEnd, Math.min(duration, newStart));
+        dragStartRef.current = { x, viewStart: origEnd, viewEnd: Math.min(dur, newStart) };
+        onChange(origEnd, Math.min(dur, newStart));
       } else {
-        onViewChange(newStart, origEnd);
+        onChange(newStart, origEnd);
       }
     } else if (draggingRef.current === 'right') {
-      let newEnd = Math.min(duration, origEnd + dTime);
+      let newEnd = Math.min(dur, origEnd + dTime);
       if (newEnd < origStart) {
-        // Crossed over — swap to dragging left edge, reset drag origin
         draggingRef.current = 'left';
         dragStartRef.current = { x, viewStart: Math.max(0, newEnd), viewEnd: origStart };
-        onViewChange(Math.max(0, newEnd), origStart);
+        onChange(Math.max(0, newEnd), origStart);
       } else {
-        onViewChange(origStart, newEnd);
+        onChange(origStart, newEnd);
       }
     }
-  };
+  }, [updateCursor]);
 
-  const handlePointerUp = (e) => {
+  const handlePointerUp = useCallback((e) => {
     draggingRef.current = null;
-    if (onGestureEnd) onGestureEnd();
+    if (onGestureEndRef.current) onGestureEndRef.current();
     updateCursor(e);
-  };
+  }, [updateCursor]);
 
 
   return (
@@ -276,34 +284,32 @@ const OverviewBar = React.memo(function OverviewBar({
           </>}
 
           {/* Loop region highlight (display-only) */}
-          {loopRegion && !(loopRegion[0] <= 0.001 && loopRegion[1] >= duration - 0.001) && <>
-            <rect
-              x={(loopRegion[0] / duration) * containerWidth}
-              y={0}
-              width={Math.max(0, ((loopRegion[1] - loopRegion[0]) / duration) * containerWidth)}
-              height={OVERVIEW_HEIGHT}
-              fill={theme.palette.waveform.loopRegion}
-              pointerEvents="none"
-            />
-            <line
-              x1={(loopRegion[0] / duration) * containerWidth}
-              y1={0}
-              x2={(loopRegion[0] / duration) * containerWidth}
-              y2={OVERVIEW_HEIGHT}
-              stroke={theme.palette.waveform.loopHandle}
-              strokeWidth={1.5}
-              pointerEvents="none"
-            />
-            <line
-              x1={(loopRegion[1] / duration) * containerWidth}
-              y1={0}
-              x2={(loopRegion[1] / duration) * containerWidth}
-              y2={OVERVIEW_HEIGHT}
-              stroke={theme.palette.waveform.loopHandle}
-              strokeWidth={1.5}
-              pointerEvents="none"
-            />
-          </>}
+          {loopRegion && !isFullRange(loopRegion[0], loopRegion[1], duration) && (() => {
+            const loopStartX = (loopRegion[0] / duration) * containerWidth;
+            const loopEndX = (loopRegion[1] / duration) * containerWidth;
+            return <>
+              <rect
+                x={loopStartX}
+                y={0}
+                width={Math.max(0, loopEndX - loopStartX)}
+                height={OVERVIEW_HEIGHT}
+                fill={theme.palette.waveform.loopRegion}
+                pointerEvents="none"
+              />
+              <line
+                x1={loopStartX} y1={0} x2={loopStartX} y2={OVERVIEW_HEIGHT}
+                stroke={theme.palette.waveform.loopHandle}
+                strokeWidth={1.5}
+                pointerEvents="none"
+              />
+              <line
+                x1={loopEndX} y1={0} x2={loopEndX} y2={OVERVIEW_HEIGHT}
+                stroke={theme.palette.waveform.loopHandle}
+                strokeWidth={1.5}
+                pointerEvents="none"
+              />
+            </>;
+          })()}
 
           {/* Playhead */}
           <line

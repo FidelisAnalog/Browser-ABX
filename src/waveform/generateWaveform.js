@@ -8,6 +8,53 @@
  * 2. downsampleRange() — fast min/max over a sample subset, runs per zoom/pan
  */
 
+/** Threshold for floating-point comparisons in view/loop range checks */
+export const EPSILON = 0.001;
+
+/** True when loop region covers the full file (no loop set) */
+export function isFullRange(start, end, duration) {
+  return start <= EPSILON && end >= duration - EPSILON;
+}
+
+/** True when the view is zoomed in (not showing the full file) */
+export function isViewZoomed(viewStart, viewEnd, duration) {
+  return viewStart > EPSILON || viewEnd < duration - EPSILON;
+}
+
+/**
+ * Build a mirrored SVG envelope path from min/max waveform data.
+ * Upper curve (max, left→right) + lower curve (min, right→left) + close.
+ *
+ * @param {{ min: number, max: number }[]} data - Downsampled min/max pairs
+ * @param {number} width - SVG width in pixels
+ * @param {number} height - SVG height in pixels
+ * @returns {string} SVG path d attribute
+ */
+export function buildEnvelopePath(data, width, height) {
+  if (data.length === 0 || width <= 0) return '';
+
+  const midY = height / 2;
+  const scale = height / 2;
+  const barWidth = width / data.length;
+
+  let upper = `M 0 ${midY}`;
+  for (let i = 0; i < data.length; i++) {
+    const x = i * barWidth;
+    const y = midY - data[i].max * scale;
+    upper += ` L ${x} ${y}`;
+  }
+  upper += ` L ${width} ${midY}`;
+
+  let lower = '';
+  for (let i = data.length - 1; i >= 0; i--) {
+    const x = i * barWidth;
+    const y = midY - data[i].min * scale;
+    lower += ` L ${x} ${y}`;
+  }
+
+  return upper + lower + ' Z';
+}
+
 /**
  * Average samples across all tracks into a single Float32Array.
  * This is the expensive O(n) step — run once and cache the result.
@@ -73,24 +120,3 @@ export function downsampleRange(averaged, points, startSample = 0, endSample) {
   return waveform;
 }
 
-/**
- * Legacy all-in-one function — averages and downsamples in one call.
- * Used by OverviewBar which always shows the full file.
- *
- * @param {Float32Array[]} channelDataArrays - Array of Float32Array per track
- * @param {number} points - Number of display points
- * @returns {{ min: number, max: number }[]} Array of min/max pairs per display point
- */
-export function generateWaveformData(channelDataArrays, points) {
-  const averaged = averageChannels(channelDataArrays);
-  return downsampleRange(averaged, points);
-}
-
-/**
- * Extract channel 0 data from each AudioBuffer for waveform generation.
- * @param {AudioBuffer[]} buffers - Array of AudioBuffers (one per track)
- * @returns {Float32Array[]} Channel 0 data from each buffer
- */
-export function extractChannel0(buffers) {
-  return buffers.map((buffer) => buffer.getChannelData(0));
-}

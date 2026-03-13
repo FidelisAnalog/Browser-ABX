@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { useTheme } from '@mui/material';
+import { isFullRange } from './generateWaveform';
 const HANDLE_TRIANGLE_SIZE = 8;
 
 /**
@@ -29,32 +30,32 @@ const LoopRegion = React.memo(function LoopRegion({
   const regionWidth = endX - startX;
 
   // If loop covers the full duration, don't render (no loop set)
-  const isFullRange = loopRegion[0] <= 0.001 && loopRegion[1] >= duration - 0.001;
+  const fullRange = isFullRange(loopRegion[0], loopRegion[1], duration);
 
   return (
     <g>
       {/* Dimmed areas outside loop region */}
-      {!isFullRange && (
+      {!fullRange && (
         <>
           <rect
             x={0}
             y={0}
             width={Math.max(0, startX)}
             height={height}
-            fill="rgba(0,0,0,0.15)"
+            fill={theme.palette.waveform.loopDim}
           />
           <rect
             x={endX}
             y={0}
             width={Math.max(0, width - endX)}
             height={height}
-            fill="rgba(0,0,0,0.15)"
+            fill={theme.palette.waveform.loopDim}
           />
         </>
       )}
 
       {/* Loop region highlight */}
-      {!isFullRange && (
+      {!fullRange && (
         <rect
           x={startX}
           y={0}

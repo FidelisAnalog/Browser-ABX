@@ -15,7 +15,7 @@
 
 import React, { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect, useImperativeHandle } from 'react';
 import { Box, useTheme } from '@mui/material';
-import { averageChannels, downsampleRange } from './generateWaveform';
+import { averageChannels, downsampleRange, buildEnvelopePath, isFullRange, isViewZoomed, EPSILON } from './generateWaveform';
 import LoopRegion from './LoopRegion';
 import Playhead from './Playhead';
 import Timeline from './Timeline';
@@ -129,32 +129,10 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   }, [averaged, containerWidth, viewStart, viewEnd, duration]);
 
   // Build SVG path for the waveform envelope
-  const waveformPath = useMemo(() => {
-    if (waveformData.length === 0) return '';
-
-    const midY = WAVEFORM_HEIGHT / 2;
-    const scale = WAVEFORM_HEIGHT / 2;
-    const barWidth = containerWidth / waveformData.length;
-
-    // Upper envelope (max values, left to right)
-    let upper = `M 0 ${midY}`;
-    for (let i = 0; i < waveformData.length; i++) {
-      const x = i * barWidth;
-      const y = midY - waveformData[i].max * scale;
-      upper += ` L ${x} ${y}`;
-    }
-    upper += ` L ${containerWidth} ${midY}`;
-
-    // Lower envelope (min values, right to left)
-    let lower = '';
-    for (let i = waveformData.length - 1; i >= 0; i--) {
-      const x = i * barWidth;
-      const y = midY - waveformData[i].min * scale;
-      lower += ` L ${x} ${y}`;
-    }
-
-    return upper + lower + ' Z';
-  }, [waveformData, containerWidth]);
+  const waveformPath = useMemo(
+    () => buildEnvelopePath(waveformData, containerWidth, WAVEFORM_HEIGHT),
+    [waveformData, containerWidth]
+  );
 
   // --- Coordinate transforms (zoom-aware) ---
 
@@ -305,12 +283,12 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       const ve = viewEndRef.current;
       const dur = durationRef.current;
       const viewDur = ve - vs;
-      const isZoomed = vs > 0.001 || ve < dur - 0.001;
+      const zoomed = isViewZoomed(vs, ve, dur);
       const pos = currentTimeRef.current;
       const isMoving = Math.abs(pos - lastPos) > 0.0001;
 
       // Detect playback start — engage follow if playhead is in view
-      if (isMoving && !wasMoving && isZoomed) {
+      if (isMoving && !wasMoving && zoomed) {
         if (pos >= vs && pos <= ve) {
           followActiveRef.current = true;
         }
@@ -319,7 +297,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       wasMoving = isMoving;
       lastPos = pos;
 
-      if (followActiveRef.current && isMoving && isZoomed) {
+      if (followActiveRef.current && isMoving && zoomed) {
         if (pos > ve) {
           // Playhead past right edge — page forward
           let newStart = ve;
@@ -435,8 +413,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
           const vs = viewStartRef.current;
           const ve = viewEndRef.current;
           const dur = durationRef.current;
-          const isZoomed = vs > 0.001 || ve < dur - 0.001;
-          if (isZoomed) {
+          if (isViewZoomed(vs, ve, dur)) {
             startWheelGesture();
             applyPan(e.deltaX / 500);
           }
@@ -562,7 +539,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       const ve = viewEndRef.current;
       const viewDur = ve - vs;
       const w = widthRef.current;
-      if (dur <= 0 || w <= 0 || viewDur >= dur - 0.001) return;
+      if (dur <= 0 || w <= 0 || viewDur >= dur - EPSILON) return;
 
       const spacerW = w * (dur / viewDur);
       const maxScroll = spacerW - w;
@@ -611,7 +588,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     const dur = duration;
     const viewDur = viewEnd - viewStart;
     const w = containerWidth;
-    if (dur <= 0 || w <= 0 || viewDur >= dur - 0.001) {
+    if (dur <= 0 || w <= 0 || viewDur >= dur - EPSILON) {
       el.scrollLeft = 0;
       return;
     }
@@ -671,8 +648,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         const x = e.clientX - rect.left;
         const time = xToTime(x);
         const [loopStart, loopEnd] = loopRegionRef.current;
-        const isFullRange = loopStart <= 0.001 && loopEnd >= duration - 0.001;
-        if (!isFullRange && (time < loopStart || time > loopEnd)) return;
+        if (!isFullRange(loopStart, loopEnd, duration) && (time < loopStart || time > loopEnd)) return;
         onSeek(time);
         followActiveRef.current = true;
       }
@@ -770,7 +746,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   const endHitVisible = endHitRight > endHitLeft;
 
   // Detect if zoomed for UI hints
-  const isZoomed = viewStart > 0.001 || viewEnd < duration - 0.001;
+  const isZoomed = isViewZoomed(viewStart, viewEnd, duration);
 
   // Spacer width for native scroll — proportional to zoom ratio
   const viewDur = viewEnd - viewStart;
@@ -801,7 +777,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       const ve = viewEndRef.current;
       const viewDur = ve - vs;
       const w = widthRef.current;
-      if (dur > 0 && w > 0 && viewDur < dur - 0.001) {
+      if (dur > 0 && w > 0 && viewDur < dur - EPSILON) {
         const spacerW = w * (dur / viewDur);
         const maxSL = spacerW - w;
         programmaticScrollRef.current = true;
