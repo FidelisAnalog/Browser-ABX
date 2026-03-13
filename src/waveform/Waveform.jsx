@@ -766,10 +766,10 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   }, []);
   const handleOverviewGestureEnd = useCallback(() => {
     gestureActiveRef.current = false;
-    overviewDraggingRef.current = false;
-    // Write correct scrollLeft now that the drag is done.
-    // The useLayoutEffect skips writes during overview drags, so scrollLeft
-    // may be stale. Sync it to the final view position.
+    // Write correct scrollLeft BEFORE clearing overviewDraggingRef.
+    // The useLayoutEffect skips writes while overviewDraggingRef is true —
+    // clearing it first creates a race where both this code and the
+    // useLayoutEffect write scrollLeft in the same commit.
     const el = scrollRef.current;
     if (el) {
       const dur = durationRef.current;
@@ -784,6 +784,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         el.scrollLeft = (vs / (dur - viewDur)) * maxSL;
       }
     }
+    overviewDraggingRef.current = false;
     checkFollowEngage();
   }, [checkFollowEngage]);
 
