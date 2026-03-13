@@ -57,8 +57,8 @@ export default function Layout({ screen, children, onContentHeight }) {
       }}
     >
       {/* Test deploy indicator — remove before merging to main */}
-      <Typography variant="caption" sx={{ textAlign: 'center', opacity: 0.4, py: 0.5 }}>
-        test-deploy-1
+      <Typography variant="body1" sx={{ textAlign: 'center', py: 1, bgcolor: 'primary.main', color: 'primary.contrastText', fontWeight: 'bold' }}>
+        test-deploy-2
       </Typography>
 
       {/* Content area — grows to fill available space */}
