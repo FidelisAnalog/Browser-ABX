@@ -52,23 +52,20 @@ Each item touches gesture/scroll coordination. Separate commits with testing bet
 - **Files:** Waveform.jsx
 - **Test:** Overview bar handle drag past swap point during playback, verify no snap
 
-### 2b. Fix `programmaticScrollRef` stale flag (review #2)
-- After writing scrollLeft, compare written value to `el.scrollLeft`
-- If they match (browser didn't fire a scroll event because value was unchanged), immediately clear the flag
-- **Files:** Waveform.jsx
-- **Test:** Zoom to a position, zoom again to same position, then scroll — verify scroll not swallowed
+### ~~2b. Fix `programmaticScrollRef` stale flag (review #2)~~ DROPPED
+- Read-back check caused scroll feedback loop on iOS — `scrollLeft` rounding mismatch clears flag prematurely
+- Theoretical issue with benign failure mode — not worth the risk
 
 ### 2c. Fix touch pinch gesture end timing (review #4)
-- Add 150ms debounce timer to `handleTouchEnd`, matching the wheel handler pattern
-- Prevents follow from re-engaging mid-finger-lift
+- Debounce timer (150ms) + `!pinchActive` guard in `handleTouchEnd` — only runs cleanup for actual pinch gestures
+- `handleTouchEnd` fires for all touches; guard prevents disrupting single-finger scroll lifecycle
 - **Files:** Waveform.jsx
-- **Test:** Pinch-zoom on iOS, release fingers, verify playhead follow doesn't snap viewport
+- **Test:** Touch pinch zoom, single-finger scroll, verify no interference
 
 ### 2d. Fix touch pinch native scroll prevention (review #3)
-- Add `touchAction: 'none'` to `containerRef` (the outer Box), not just the scroll wrapper
-- This is where the touch pinch listener lives — prevents iOS from capturing the gesture as page zoom
+- `touchAction: 'none'` on outer container prevents iOS page zoom during waveform pinch
 - **Files:** Waveform.jsx
-- **Test:** Two-finger pinch on iOS with vertical component, verify no page zoom
+- **Test:** Touch pinch on waveform doesn't trigger page zoom, native scroll still works
 
 ### 2e. Consolidate rAF loops (review #12)
 - Single rAF coordinator in Waveform that updates both main playhead and overview playhead positions

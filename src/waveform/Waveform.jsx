@@ -65,6 +65,9 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   const scrollRef = useRef(null);
   const scrollCausedViewChangeRef = useRef(false);
   const programmaticScrollRef = useRef(false);
+  const mainPlayheadRef = useRef(null);
+  const overviewPlayheadRef = useRef(null);
+  const overviewWidthRef = useRef(0);
 
   // Refs so pointer handlers always read current values (no stale closures)
   const loopRegionRef = useRef(loopRegion);
@@ -157,12 +160,6 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   // Store timeToX in a ref for the Playhead rAF loop
   const timeToXRef = useRef(timeToX);
   timeToXRef.current = timeToX;
-
-  // Stable ref-based timeToX for Playhead (avoids re-creating on every zoom)
-  const timeToXForPlayhead = useCallback(
-    (time) => timeToXRef.current(time),
-    []
-  );
 
   // --- User-initiated viewport changes ---
   // All user zoom/pan goes through setUserView. Disengages follow immediately,
@@ -277,17 +274,41 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     let rafId = null;
     let lastPos = currentTimeRef.current;
     let wasMoving = false;
+    let lastMainX = -1;
+    let lastOverviewX = -1;
 
-    const checkFollow = () => {
+    const tick = () => {
+      const pos = currentTimeRef.current;
+      const dur = durationRef.current;
+
+      // Update main playhead
+      if (mainPlayheadRef.current) {
+        const x = timeToXRef.current(pos);
+        if (x !== lastMainX) {
+          mainPlayheadRef.current.setAttribute('x1', x);
+          mainPlayheadRef.current.setAttribute('x2', x);
+          lastMainX = x;
+        }
+      }
+
+      // Update overview playhead
+      if (overviewPlayheadRef.current) {
+        const ow = overviewWidthRef.current;
+        const x = dur > 0 && ow > 0 ? (pos / dur) * ow : 0;
+        if (x !== lastOverviewX) {
+          overviewPlayheadRef.current.setAttribute('x1', x);
+          overviewPlayheadRef.current.setAttribute('x2', x);
+          lastOverviewX = x;
+        }
+      }
+
+      // Follow-mode auto-scroll
       const vs = viewStartRef.current;
       const ve = viewEndRef.current;
-      const dur = durationRef.current;
       const viewDur = ve - vs;
       const zoomed = isViewZoomed(vs, ve, dur);
-      const pos = currentTimeRef.current;
       const isMoving = Math.abs(pos - lastPos) > 0.0001;
 
-      // Detect playback start — engage follow if playhead is in view
       if (isMoving && !wasMoving && zoomed) {
         if (pos >= vs && pos <= ve) {
           followActiveRef.current = true;
@@ -299,14 +320,12 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
 
       if (followActiveRef.current && isMoving && zoomed) {
         if (pos > ve) {
-          // Playhead past right edge — page forward
           let newStart = ve;
           let newEnd = ve + viewDur;
           if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
           setViewStart(newStart);
           setViewEnd(newEnd);
         } else if (pos < vs) {
-          // Playhead past left edge (loop wrap) — snap to show playhead
           let newStart = pos;
           let newEnd = pos + viewDur;
           if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
@@ -316,10 +335,10 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         }
       }
 
-      rafId = requestAnimationFrame(checkFollow);
+      rafId = requestAnimationFrame(tick);
     };
 
-    rafId = requestAnimationFrame(checkFollow);
+    rafId = requestAnimationFrame(tick);
     return () => { if (rafId) cancelAnimationFrame(rafId); };
   }, [currentTimeRef]);
 
@@ -800,15 +819,16 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     <>
     {/* Overview bar — only visible when zoomed */}
     <OverviewBar
+      ref={overviewPlayheadRef}
       averaged={averaged}
       duration={duration}
       viewStart={viewStart}
       viewEnd={viewEnd}
       onViewChange={handleViewChange}
-      currentTimeRef={currentTimeRef}
       loopRegion={loopRegion}
       onGestureStart={handleOverviewGestureStart}
       onGestureEnd={handleOverviewGestureEnd}
+      overviewWidthRef={overviewWidthRef}
     />
     <Box
       ref={containerRef}
@@ -881,8 +901,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
 
             {/* Playhead */}
             <Playhead
-              timeRef={currentTimeRef}
-              timeToX={timeToXForPlayhead}
+              ref={mainPlayheadRef}
               height={WAVEFORM_HEIGHT}
             />
 

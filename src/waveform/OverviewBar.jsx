@@ -25,32 +25,33 @@ const CURSOR_WIDTH = 6;  // px cursor zone for mouse (narrower than hit area)
  * @param {number} props.viewStart - Start of visible range in seconds
  * @param {number} props.viewEnd - End of visible range in seconds
  * @param {(start: number, end: number) => void} props.onViewChange - Callback to update view range
- * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
  * @param {[number, number]} props.loopRegion - [start, end] loop cursors in seconds
  * @param {() => void} props.onGestureStart - Called when a drag gesture begins
  * @param {() => void} props.onGestureEnd - Called when a drag gesture ends
+ * @param {{ current: number }} props.overviewWidthRef - Ref written with container width for parent rAF loop
+ * @param {React.Ref} ref - Forwarded ref for the playhead SVG line element
  */
-const OverviewBar = React.memo(function OverviewBar({
+const OverviewBar = React.memo(React.forwardRef(function OverviewBar({
   averaged,
   duration,
   viewStart,
   viewEnd,
   onViewChange,
-  currentTimeRef,
   loopRegion,
   onGestureStart,
   onGestureEnd,
-}) {
+  overviewWidthRef,
+}, ref) {
   const theme = useTheme();
   const clipId = useId();
   const containerRef = useRef(null);
-  const playheadRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const draggingRef = useRef(null); // 'pan' | 'left' | 'right' | null
   const durationRef = useRef(duration);
   durationRef.current = duration;
   const containerWidthRef = useRef(containerWidth);
   containerWidthRef.current = containerWidth;
+  if (overviewWidthRef) overviewWidthRef.current = containerWidth;
   const dragStartRef = useRef({ x: 0, viewStart: 0, viewEnd: 0 });
 
   // Refs so pointer handlers always read current values (no stale closures)
@@ -78,28 +79,6 @@ const OverviewBar = React.memo(function OverviewBar({
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
-
-  // Self-animating playhead — reads timeRef each frame, updates DOM directly
-  useEffect(() => {
-    if (!currentTimeRef) return;
-    let rafId = null;
-    let lastX = -1;
-    const animate = () => {
-      if (playheadRef.current) {
-        const dur = durationRef.current;
-        const w = containerWidthRef.current;
-        const x = dur > 0 && w > 0 ? (currentTimeRef.current / dur) * w : 0;
-        if (x !== lastX) {
-          playheadRef.current.setAttribute('x1', x);
-          playheadRef.current.setAttribute('x2', x);
-          lastX = x;
-        }
-      }
-      rafId = requestAnimationFrame(animate);
-    };
-    rafId = requestAnimationFrame(animate);
-    return () => { if (rafId) cancelAnimationFrame(rafId); };
-  }, [currentTimeRef]);
 
   // Generate overview waveform data (full file, low resolution)
   const waveformData = useMemo(
@@ -313,7 +292,7 @@ const OverviewBar = React.memo(function OverviewBar({
 
           {/* Playhead */}
           <line
-            ref={playheadRef}
+            ref={ref}
             x1={0} y1={0} x2={0} y2={OVERVIEW_HEIGHT}
             stroke={theme.palette.waveform.playhead}
             strokeWidth={PLAYHEAD_WIDTH}
@@ -323,6 +302,6 @@ const OverviewBar = React.memo(function OverviewBar({
       )}
     </Box>
   );
-});
+}));
 
 export default OverviewBar;
