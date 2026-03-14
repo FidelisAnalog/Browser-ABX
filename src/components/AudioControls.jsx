@@ -157,7 +157,7 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
               </IconButton>
             </span>
           </Tooltip>
-          <Tooltip title="Zoom out (\u2212)">
+          <Tooltip title="Zoom out (−)">
             <span>
               <IconButton
                 onClick={() => waveformRef.current?.zoomOut()}
