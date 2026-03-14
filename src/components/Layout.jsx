@@ -56,11 +56,6 @@ export default function Layout({ screen, children, onContentHeight }) {
         minHeight: isEmbedded ? `${EMBEDDED_MIN_HEIGHT}px` : '100dvh',
       }}
     >
-      {/* Test deploy indicator — remove before merging to main */}
-      <Typography variant="body1" sx={{ textAlign: 'center', py: 1, bgcolor: 'primary.main', color: 'primary.contrastText', fontWeight: 'bold' }}>
-        E1-3
-      </Typography>
-
       {/* Content area — grows to fill available space */}
       <Container
         maxWidth="md"
