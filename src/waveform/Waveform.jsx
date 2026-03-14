@@ -141,6 +141,23 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     [waveformData, containerWidth]
   );
 
+  // --- Diagnostic: log pipeline state when waveform is blank ---
+  useEffect(() => {
+    if (channelData.length > 0 && waveformPath.length === 0) {
+      console.warn('[WAVEFORM BLANK]', {
+        containerWidth,
+        duration,
+        viewStart,
+        viewEnd,
+        averagedLen: averaged.length,
+        waveformDataLen: waveformData.length,
+        waveformPathLen: waveformPath.length,
+        channelDataLen: channelData.length,
+        channelData0Len: channelData[0]?.length ?? 0,
+      });
+    }
+  }, [channelData, averaged, waveformData, waveformPath, containerWidth, duration, viewStart, viewEnd]);
+
   // --- Coordinate transforms (zoom-aware) ---
 
   const timeToX = useCallback(

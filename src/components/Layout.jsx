@@ -56,6 +56,11 @@ export default function Layout({ screen, children, onContentHeight }) {
         minHeight: isEmbedded ? `${EMBEDDED_MIN_HEIGHT}px` : '100dvh',
       }}
     >
+      {/* Deploy indicator */}
+      <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', textAlign: 'center', py: 0.5 }}>
+        <Typography variant="caption" sx={{ fontWeight: 'bold' }}>diag-1</Typography>
+      </Box>
+
       {/* Content area — grows to fill available space */}
       <Container
         maxWidth="md"
