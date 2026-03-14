@@ -907,7 +907,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
             onPointerMove={handleWaveformPointerMove}
             onPointerUp={handleWaveformPointerUp}
             onPointerCancel={handleWaveformPointerCancel}
-            style={{ display: 'block', position: isZoomed ? 'sticky' : 'static', left: 0, transform: 'translateZ(0)' }}
+            style={{ display: 'block', position: 'sticky', left: 0 }}
           >
             {/* Background */}
             <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={theme.palette.waveform.background} />
