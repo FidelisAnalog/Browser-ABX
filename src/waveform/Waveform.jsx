@@ -58,7 +58,6 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   const theme = useTheme();
   const containerRef = useRef(null);
   const svgRef = useRef(null);
-  const dragActiveRef = useRef(false);
   const draggingRef = useRef(null); // 'start' | 'end' | null
   const containerRectRef = useRef(null);
   const panDragRef = useRef({ startX: null, moved: false });
@@ -68,6 +67,11 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   const mainPlayheadRef = useRef(null);
   const overviewPlayheadRef = useRef(null);
   const overviewWidthRef = useRef(0);
+
+  // --- Gesture state machine ---
+  // Single enum replaces dragActiveRef, gestureActiveRef, overviewDraggingRef.
+  // Values: 'idle' | 'wheel' | 'pinch' | 'overviewDrag' | 'handleDrag' | 'scroll'
+  const gestureRef = useRef('idle');
 
   // Refs so pointer handlers always read current values (no stale closures)
   const loopRegionRef = useRef(loopRegion);
@@ -87,8 +91,6 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
 
   // --- Playhead follow state ---
   const followActiveRef = useRef(false);
-  const gestureActiveRef = useRef(false);
-  const overviewDraggingRef = useRef(false);
 
   // Reset zoom when duration changes (new test loaded)
   useEffect(() => {
@@ -169,7 +171,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     followActiveRef.current = false;
     setViewStart(newStart);
     setViewEnd(newEnd);
-    if (!gestureActiveRef.current) {
+    if (gestureRef.current === 'idle') {
       const pos = currentTimeRef ? currentTimeRef.current : 0;
       followActiveRef.current = (pos >= newStart && pos <= newEnd);
     }
@@ -401,10 +403,10 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     let lastGestureScale = 1;
 
     const startWheelGesture = () => {
-      gestureActiveRef.current = true;
+      gestureRef.current = 'wheel';
       if (gestureEndTimer) clearTimeout(gestureEndTimer);
       gestureEndTimer = setTimeout(() => {
-        gestureActiveRef.current = false;
+        if (gestureRef.current === 'wheel') gestureRef.current = 'idle';
         checkFollowEngage();
       }, 150);
     };
@@ -491,7 +493,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     const handleTouchStart = (e) => {
       if (e.touches.length === 2) {
         pinchActive = true;
-        gestureActiveRef.current = true;
+        gestureRef.current = 'pinch';
         initialDistance = getDistance(e.touches[0], e.touches[1]);
         initialViewStart = viewStartRef.current;
         initialViewEnd = viewEndRef.current;
@@ -530,7 +532,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       // Without this, follow re-engages between the first and second finger lift.
       if (gestureEndTimer) clearTimeout(gestureEndTimer);
       gestureEndTimer = setTimeout(() => {
-        gestureActiveRef.current = false;
+        if (gestureRef.current === 'pinch') gestureRef.current = 'idle';
         checkFollowEngage();
       }, 150);
     };
@@ -560,7 +562,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         return;
       }
       // Skip scroll-driven updates during overview bar drag
-      if (overviewDraggingRef.current) return;
+      if (gestureRef.current === 'overviewDrag') return;
       const dur = durationRef.current;
       const vs = viewStartRef.current;
       const ve = viewEndRef.current;
@@ -577,10 +579,10 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       const newEnd = newStart + viewDur;
 
       scrollCausedViewChangeRef.current = true;
-      gestureActiveRef.current = true;
+      gestureRef.current = 'scroll';
       if (gestureEndTimer) clearTimeout(gestureEndTimer);
       gestureEndTimer = setTimeout(() => {
-        gestureActiveRef.current = false;
+        if (gestureRef.current === 'scroll') gestureRef.current = 'idle';
         checkFollowEngage();
       }, 150);
 
@@ -607,7 +609,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     // During overview bar drags, the view is driven by React state (not scroll).
     // Skip scroll sync — the scrolling thread can do whatever it wants.
     // Correct scrollLeft is written at gesture end.
-    if (overviewDraggingRef.current) return;
+    if (gestureRef.current === 'overviewDrag') return;
     if (scrollCausedViewChangeRef.current) {
       scrollCausedViewChangeRef.current = false;
       return;
@@ -635,7 +637,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
 
   const handleWaveformPointerDown = useCallback(
     (e) => {
-      if (dragActiveRef.current) return;
+      if (gestureRef.current === 'handleDrag') return;
       if (!svgRef.current || duration <= 0) return;
       // Don't capture pointer for touch — let browser handle native scroll
       if (e.pointerType !== 'touch') {
@@ -704,7 +706,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       e.stopPropagation();
       e.target.setPointerCapture(e.pointerId);
       draggingRef.current = handle;
-      dragActiveRef.current = true;
+      gestureRef.current = 'handleDrag';
       containerRectRef.current = containerRef.current?.getBoundingClientRect();
     },
     []
@@ -752,9 +754,11 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   const handlePointerUp = useCallback(
     () => {
       draggingRef.current = null;
-      // Clear drag flag after a microtask so the click event (which fires
-      // synchronously after pointerup) still sees dragActiveRef=true
-      setTimeout(() => { dragActiveRef.current = false; }, 0);
+      // Clear gesture after a microtask so the click event (which fires
+      // synchronously after pointerup) still sees handleDrag active
+      setTimeout(() => {
+        if (gestureRef.current === 'handleDrag') gestureRef.current = 'idle';
+      }, 0);
     },
     []
   );
@@ -788,13 +792,11 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
 
   // Overview bar gesture callbacks
   const handleOverviewGestureStart = useCallback(() => {
-    gestureActiveRef.current = true;
-    overviewDraggingRef.current = true;
+    gestureRef.current = 'overviewDrag';
   }, []);
   const handleOverviewGestureEnd = useCallback(() => {
-    gestureActiveRef.current = false;
-    // Write correct scrollLeft BEFORE clearing overviewDraggingRef.
-    // The useLayoutEffect skips writes while overviewDraggingRef is true —
+    // Write correct scrollLeft BEFORE clearing overviewDrag.
+    // The useLayoutEffect skips writes while gesture is overviewDrag —
     // clearing it first creates a race where both this code and the
     // useLayoutEffect write scrollLeft in the same commit.
     const el = scrollRef.current;
@@ -811,7 +813,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         el.scrollLeft = (vs / (dur - viewDur)) * maxSL;
       }
     }
-    overviewDraggingRef.current = false;
+    gestureRef.current = 'idle';
     checkFollowEngage();
   }, [checkFollowEngage]);
 
