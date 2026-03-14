@@ -818,6 +818,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         userSelect: 'none',
         WebkitTapHighlightColor: 'transparent',
         overscrollBehaviorX: 'none',
+        touchAction: 'none',
         cursor: 'pointer',
         borderRadius: 1,
         border: `1px solid ${theme.palette.waveform.border}`,
