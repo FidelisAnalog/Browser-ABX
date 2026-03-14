@@ -461,6 +461,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     let initialViewStart = 0;
     let initialViewEnd = 0;
     let pinchActive = false;
+    let gestureEndTimer = null;
 
     const getDistance = (t1, t2) =>
       Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
@@ -504,9 +505,15 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     };
 
     const handleTouchEnd = () => {
+      if (!pinchActive) return;
       pinchActive = false;
-      gestureActiveRef.current = false;
-      checkFollowEngage();
+      // Debounce gesture end — fingers lift sequentially, not simultaneously.
+      // Without this, follow re-engages between the first and second finger lift.
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
+      gestureEndTimer = setTimeout(() => {
+        gestureActiveRef.current = false;
+        checkFollowEngage();
+      }, 150);
     };
 
     el.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -517,6 +524,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       el.removeEventListener('touchstart', handleTouchStart);
       el.removeEventListener('touchmove', handleTouchMove);
       el.removeEventListener('touchend', handleTouchEnd);
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
     };
   }, [setUserView, checkFollowEngage]);
 
