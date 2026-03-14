@@ -56,11 +56,6 @@ export default function Layout({ screen, children, onContentHeight }) {
         minHeight: isEmbedded ? `${EMBEDDED_MIN_HEIGHT}px` : '100dvh',
       }}
     >
-      {/* Header slot — reserved for future branding */}
-      {branding.header && (
-        <Box>{/* header content will go here */}</Box>
-      )}
-
       {/* Content area — grows to fill available space */}
       <Container
         maxWidth="md"
