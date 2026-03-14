@@ -9,7 +9,7 @@
  * On narrow viewports the middle group wraps to a second line at full width.
  */
 
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Box, Paper, IconButton, Tooltip } from '@mui/material';
 import Waveform from '../waveform/Waveform';
 import TransportControls from './TransportControls';
@@ -32,6 +32,7 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
   const loopRegion = useLoopRegion(engine);
   const transportState = useTransportState(engine);
   const waveformRef = useRef(null);
+  const [zoomState, setZoomState] = useState({ isZoomed: false, isMaxZoom: false });
 
   const onSeek = useCallback((t) => engine?.seek(t), [engine]);
   const onLoopRegionChange = useCallback((s, e) => engine?.setLoopRegion(s, e), [engine]);
@@ -69,6 +70,7 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
           loopRegion={loopRegion}
           onSeek={onSeek}
           onLoopRegionChange={onLoopRegionChange}
+          onZoomChange={setZoomState}
         />
       </Box>
 
@@ -148,7 +150,7 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
             <span>
               <IconButton
                 onClick={() => waveformRef.current?.zoomIn()}
-                disabled={duration <= 0}
+                disabled={duration <= 0 || zoomState.isMaxZoom}
                 size="medium"
               >
                 <ZoomInIcon />
@@ -159,7 +161,7 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
             <span>
               <IconButton
                 onClick={() => waveformRef.current?.zoomOut()}
-                disabled={duration <= 0}
+                disabled={duration <= 0 || !zoomState.isZoomed}
                 size="medium"
               >
                 <ZoomOutIcon />
@@ -170,7 +172,7 @@ export default function AudioControls({ engine, channelData, crossfadeForced }) 
             <span>
               <IconButton
                 onClick={() => waveformRef.current?.resetZoom()}
-                disabled={duration <= 0}
+                disabled={duration <= 0 || !zoomState.isZoomed}
                 size="medium"
               >
                 <ZoomOutMapIcon />

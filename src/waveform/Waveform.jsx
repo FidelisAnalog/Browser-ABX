@@ -46,6 +46,7 @@ const PAN_FACTOR = 0.25;         // pan by 25% of view width per Shift+scroll st
  * @param {[number, number]} props.loopRegion - [start, end] in seconds
  * @param {(time: number) => void} props.onSeek - Seek callback
  * @param {(start: number, end: number) => void} props.onLoopRegionChange - Loop region change callback
+ * @param {({ isZoomed: boolean, isMaxZoom: boolean }) => void} props.onZoomChange - Zoom state change callback
  */
 const Waveform = React.memo(React.forwardRef(function Waveform({
   channelData,
@@ -54,13 +55,14 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
   loopRegion,
   onSeek,
   onLoopRegionChange,
+  onZoomChange,
 }, ref) {
   const theme = useTheme();
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const draggingRef = useRef(null); // 'start' | 'end' | null
   const containerRectRef = useRef(null);
-  const panDragRef = useRef({ startX: null, moved: false });
+  const panDragRef = useRef({ startX: null, moved: false, viewStart: 0, viewEnd: 0 });
   const scrollRef = useRef(null);
   const scrollCausedViewChangeRef = useRef(false);
   const programmaticScrollRef = useRef(false);
@@ -70,7 +72,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
 
   // --- Gesture state machine ---
   // Single enum replaces dragActiveRef, gestureActiveRef, overviewDraggingRef.
-  // Values: 'idle' | 'wheel' | 'pinch' | 'overviewDrag' | 'handleDrag' | 'scroll'
+  // Values: 'idle' | 'wheel' | 'pinch' | 'overviewDrag' | 'handleDrag' | 'scroll' | 'waveformPan'
   const gestureRef = useRef('idle');
 
   // Refs so pointer handlers always read current values (no stale closures)
@@ -627,13 +629,7 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
     el.scrollLeft = (viewStart / (dur - viewDur)) * maxScroll;
   }, [viewStart, viewEnd, duration, containerWidth]);
 
-  // --- Double-click to reset zoom ---
-
-  const handleDoubleClick = useCallback(() => {
-    resetZoom();
-  }, [resetZoom]);
-
-  // --- Waveform pointer handlers: click-to-seek ---
+  // --- Waveform pointer handlers: click-to-seek + drag-to-pan ---
 
   const handleWaveformPointerDown = useCallback(
     (e) => {
@@ -647,6 +643,8 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       panDragRef.current = {
         startX: e.clientX - rect.left,
         moved: false,
+        viewStart: viewStartRef.current,
+        viewEnd: viewEndRef.current,
       };
     },
     [duration]
@@ -662,8 +660,25 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
       if (!pd.moved && Math.abs(x - pd.startX) > 3) {
         pd.moved = true;
       }
+      // Mouse drag-to-pan (touch uses native scroll instead)
+      if (pd.moved && e.pointerType !== 'touch') {
+        const w = widthRef.current;
+        const dur = durationRef.current;
+        if (w > 0 && dur > 0) {
+          const origViewDur = pd.viewEnd - pd.viewStart;
+          const dx = x - pd.startX;
+          const dTime = -(dx / w) * origViewDur; // negative: drag right = pan left
+          let newStart = pd.viewStart + dTime;
+          let newEnd = pd.viewEnd + dTime;
+          if (newStart < 0) { newStart = 0; newEnd = origViewDur; }
+          if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - origViewDur); }
+          gestureRef.current = 'waveformPan';
+          svgRef.current.style.cursor = 'grabbing';
+          setUserView(newStart, newEnd);
+        }
+      }
     },
-    []
+    [setUserView]
   );
 
   const handleWaveformPointerUp = useCallback(
@@ -680,10 +695,15 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
         if (!isFullRange(loopStart, loopEnd, duration) && (time < loopStart || time > loopEnd)) return;
         onSeek(time);
         followActiveRef.current = true;
+      } else {
+        // End of drag-to-pan
+        if (svgRef.current) svgRef.current.style.cursor = '';
+        if (gestureRef.current === 'waveformPan') gestureRef.current = 'idle';
+        checkFollowEngage();
       }
       pd.startX = null;
     },
-    [duration, onSeek, xToTime]
+    [duration, onSeek, xToTime, checkFollowEngage]
   );
 
   const handleWaveformPointerCancel = useCallback(() => {
@@ -778,9 +798,23 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
 
   // Detect if zoomed for UI hints
   const isZoomed = isViewZoomed(viewStart, viewEnd, duration);
+  const viewDur = viewEnd - viewStart;
+  const isMaxZoom = viewDur <= MIN_VIEW_DURATION * 1.01; // 1% tolerance
+
+  // Notify parent of zoom state changes
+  const onZoomChangeRef = useRef(onZoomChange);
+  onZoomChangeRef.current = onZoomChange;
+  const prevZoomStateRef = useRef(null);
+  useEffect(() => {
+    if (!onZoomChangeRef.current) return;
+    const key = `${isZoomed}|${isMaxZoom}`;
+    if (key !== prevZoomStateRef.current) {
+      prevZoomStateRef.current = key;
+      onZoomChangeRef.current({ isZoomed, isMaxZoom });
+    }
+  }, [isZoomed, isMaxZoom]);
 
   // Spacer width for native scroll — proportional to zoom ratio
-  const viewDur = viewEnd - viewStart;
   const spacerWidth = isZoomed && viewDur > 0
     ? containerWidth * (duration / viewDur)
     : containerWidth;
@@ -873,7 +907,6 @@ const Waveform = React.memo(React.forwardRef(function Waveform({
             onPointerMove={handleWaveformPointerMove}
             onPointerUp={handleWaveformPointerUp}
             onPointerCancel={handleWaveformPointerCancel}
-            onDoubleClick={handleDoubleClick}
             style={{ display: 'block', position: 'sticky', left: 0 }}
           >
             {/* Background */}
