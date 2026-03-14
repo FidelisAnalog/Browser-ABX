@@ -16,31 +16,39 @@ Point your iframe at `https://acidtest.io`. There is no need to self-host the SP
 
 ```html
 <iframe src="https://acidtest.io/" scrolling="no"
-  style="border:none; width:100%; height:auto; min-height:700px;"></iframe>
+  style="border:none; width:100%; height:auto; min-height:755px;"></iframe>
 ```
 
 | Property | Why |
 |---|---|
 | `border:none` | Removes the default iframe border. |
 | `scrolling="no"` | Prevents a scrollbar inside the iframe. The parent page's scrollbar handles everything. |
-| `height:auto; min-height:700px` | `height:auto` prevents the iframe from stretching beyond the content (no gap below). `min-height:700px` ensures enough room for the test screen. Use the `acidtest:resize` event to dynamically adjust the iframe height as content changes. |
+| `height:auto; min-height:755px` | `height:auto` prevents the iframe from stretching beyond the content (no gap below). `min-height:755px` ensures enough room for the test screen. Use the `acidtest:resize` event to dynamically adjust the iframe height as content changes. |
 
 For a seamless appearance, set the iframe's `background` to match your page background. Our dark theme uses `#121212` and light theme uses `#fff`.
 
 ## Safari Audio Cleanup
 
-Safari can retain stale audio pipeline state from a previous iframe across page navigations and reloads. This can cause audio playback to be delayed by several hundred milliseconds relative to the visual playhead. To prevent this, destroy the iframe when the user navigates away:
+Safari can retain stale audio pipeline state from a previous iframe across page navigations and reloads. This can cause audio playback to be delayed by several hundred milliseconds relative to the visual playhead, or produce a click/pop on next load. To prevent this:
+
+1. **Create a fresh iframe each time** the user launches a test — do not reuse a static iframe across multiple test sessions.
+2. **Destroy the iframe on navigation** — when the user leaves the page, tear down the iframe completely:
 
 ```html
 <script>
 window.addEventListener('pagehide', function() {
   var iframe = document.querySelector('iframe[src*="acidtest.io"]');
-  if (iframe) iframe.src = 'about:blank';
+  if (iframe) {
+    iframe.src = 'about:blank';
+    iframe.remove();
+  }
 });
 </script>
 ```
 
-This forces Safari to tear down the audio context cleanly. When the user returns, the iframe reloads fresh. This only affects Safari — Chrome and Firefox are not affected.
+`about:blank` navigates to a blank document, and `remove()` destroys the browsing context entirely — this gives Safari the strongest signal to release GPU audio resources. When the user returns, create a new iframe from scratch.
+
+This only affects Safari — Chrome and Firefox are not affected. If you have control over server headers, setting `Cache-Control: no-store` on pages that embed acidtest.io is the most reliable fix, as it prevents Safari from caching the page in its back-forward cache.
 
 ## Handshake
 
@@ -338,6 +346,24 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
 
 `level` is the 1-based index into the non-reference options. `finalState` contains the full staircase algorithm state for custom threshold computation.
 
+### `acidtest:resize`
+
+Fired when the app's content height changes. Use this to dynamically resize the iframe container so no scrollbar is needed inside the iframe.
+
+```json
+{ "type": "acidtest:resize", "height": 755 }
+```
+
+`height` is the content height in pixels. Update the iframe's container height to match:
+
+```js
+window.addEventListener('message', (e) => {
+  if (e.data?.type === 'acidtest:resize' && e.data.height) {
+    iframe.style.height = e.data.height + 'px';
+  }
+});
+```
+
 ## Minimal Integration Example
 
 ```html
@@ -346,7 +372,7 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
 <head><title>My Test</title></head>
 <body>
   <iframe id="testFrame" src="https://acidtest.io/" scrolling="no"
-    style="border:none; width:100%; height:auto; min-height:700px;"></iframe>
+    style="border:none; width:100%; height:auto; min-height:755px;"></iframe>
   <script>
     const config = {
       name: "Quick Test",
@@ -381,24 +407,6 @@ No `correctAnswer` or `isCorrect` — preference tests have no right answer.
   </script>
 </body>
 </html>
-```
-
-### `acidtest:resize`
-
-Fired when the app's content height changes. Use this to dynamically resize the iframe container so no scrollbar is needed inside the iframe.
-
-```json
-{ "type": "acidtest:resize", "height": 755 }
-```
-
-`height` is the content height in pixels. Update the iframe's container height to match:
-
-```js
-window.addEventListener('message', (e) => {
-  if (e.data?.type === 'acidtest:resize' && e.data.height) {
-    iframe.style.height = e.data.height + 'px';
-  }
-});
 ```
 
 ## Abandonment Tracking

@@ -2,36 +2,35 @@
 
 ## 2026-03-13
 
-- Fixed Chrome Android blue highlight on waveform touch
-- Fixed iOS vertical scroll blocked by waveform touch
-- Narrowed loop handle hit zones for mouse while preserving full touch area
-- Widened overview bar viewport edge handles from 6px to 20px for touch
-- Fixed iOS magnifier/Find dialog appearing on handle drag
-- Fixed overview bar viewport snap to far right on finger lift
-- Removed all diagnostic/debug code from waveform components
-- Extracted shared waveform constants and helpers to generateWaveform.js
-- Removed dead code (generateWaveformData, extractChannel0)
-- Moved loop dim color to theme palette
-- Memoized OverviewBar event handlers
-- Fixed overview gesture end ordering
-- Added debounce to touch pinch gesture end timing
-- Added touchAction:none to outer waveform container
-- Consolidated 3 requestAnimationFrame loops into a single coordinator
-- Replaced 3 boolean gesture ref flags with single enum state machine
-- Added click-and-drag to pan on main waveform (mouse only)
-- Removed double-click to reset zoom
-- Added zoom control disabled states
 - Fixed zoom out tooltip showing literal \u2212 instead of minus sign
+- Added zoom control disabled states
+- Removed double-click to reset zoom
+- Added click-and-drag to pan on main waveform (mouse only)
+- Replaced 3 boolean gesture ref flags with single enum state machine
+- Consolidated 3 requestAnimationFrame loops into a single coordinator
+- Added touchAction:none to outer waveform container
+- Added debounce to touch pinch gesture end timing
+- Fixed overview gesture end ordering
+- Memoized OverviewBar event handlers
+- Moved loop dim color to theme palette
+- Removed dead code (generateWaveformData, extractChannel0)
+- Extracted shared waveform constants and helpers to generateWaveform.js
+- Removed all diagnostic/debug code from waveform components
+- Fixed overview bar viewport snap to far right on finger lift
+- Fixed iOS magnifier/Find dialog appearing on handle drag
+- Widened overview bar viewport edge handles from 6px to 20px for touch
+- Narrowed loop handle hit zones for mouse while preserving full touch area
+- Fixed iOS vertical scroll blocked by waveform touch
+- Fixed Chrome Android blue highlight on waveform touch
 
 ## 2026-03-12
 
 - Added Safari audio cleanup guidance for embedders
-- Added latency debug logging for Safari iframe investigation
 
 ## 2026-03-11
 
-- Added loop boundary fade to eliminate clicks at native loop splice points
 - Added lazy refill timer for loop boundary fades
+- Added loop boundary fade to eliminate clicks at native loop splice points
 
 ## 2026-03-10
 
@@ -58,7 +57,6 @@
 ## 2026-03-07
 
 - Added isCorrect to acidtest:progress postMessage event
-- Changed license from MIT to CPAL-1.0
 
 ## 2026-03-06
 
@@ -69,8 +67,8 @@
 - Added SHA-256 anti-cheat commitment to all test types
 - Extracted config loading into useConfig hook
 - Added SHA-256 commitment utility for anti-cheat answer verification
-- Flushed audio pipeline with silence on pagehide for Safari
-- Prevented bfcache to fix cross-session audio bleed
+- Flushed audio pipeline with silence on pagehide (Safari)
+- Prevented bfcache to fix cross-session audio bleed (Chrome; Safari ignores this)
 - Restored loading spinner for embedded skipWelcome flow
 - Removed Container gutters when embedded for better mobile width
 - Fixed audio bleed across page navigations
@@ -103,6 +101,33 @@
 - Fixed back-nav over handle hit areas, always consume horizontal wheel
 - Fixed iOS scroll regressions: handle clamping, feedback loop, page width
 - Fixed iOS native scroll: attach handler on mount, prevent feedback loop
+- Added native scroll container for iOS touch momentum on main waveform
+- Added click-and-drag viewport in overview bar
+- Added overview loop region highlight and native trackpad pan with momentum
+
+## 2026-02-27
+
+- Added lookahead scheduling and crossfade gain.value fix for click-free switching
+
+## 2026-02-25
+
+- Reused AudioBuffers across iterations instead of reallocating
+
+## 2026-02-24
+
+- Renamed project to DBT with dynamic page titles
+- Added 2AFC adaptive staircase test type for JND determination
+- Fixed audio click on trial submit by respecting in-flight micro fade
+- Fixed Safari trackpad pinch zoom exponential acceleration
+- Code review fixes: statistics, validation, and hardening
+
+## 2026-02-23
+
+- Fixed Shift+ArrowLeft firing both pan and jump back
+- Fixed seek during playback: update engine position immediately
+- Overview bar UX improvements and waveform drag-to-pan
+- Added playhead indicator to overview bar
+- Added playhead follow mode (iZotope RX-style)
 
 ## 2026-02-22
 
@@ -113,10 +138,12 @@
 
 ## 2026-02-21
 
+- Detected duplicate option names and added async effect cleanup
+- Fixed sample rate display
+- Added tooltips to response breakdown headers
 - Added ABXY test type
 - Added 2AFC-SD (same-different) test type
 - Centralized test type logic into registry
-- Detected duplicate option names and added async effect cleanup
 
 ## 2026-02-20
 
@@ -130,10 +157,15 @@
 
 - Added Triangle/Triangle+C test types
 - Added ABX+C test type, results page redesign, share improvements
+- Added ABX iteration progress bar
+- Widened layout, taller waveform
+- Fixed ABX submit button not resetting when X is selected
 - Added cache: no-store to audio fetch for iOS Chrome compatibility
-- Fixed crossfade timing, gap, and click artifacts
+- Fixed share URL encoding (URL-safe base64, double encoding, filter bug)
 - Replaced ducking with crossfade on track switch
+- Fixed crossfade timing, gap, and click artifacts
 - Shuffled options once per test, persisted for all iterations
+- Reshuffled AB preference test option order every iteration
 - Fixed waveform width flash by deferring render until measured
 - Eliminated drag pops: re-anchor instead of recreating source when in bounds
 - Refactored cursor handles from SVG hit rects to HTML divs with Pointer Events
@@ -147,6 +179,7 @@
 
 - Fixed audio pops on seek while paused and stop while paused
 - Refactored AudioEngine as external store with selective subscriptions
+- Persisted loop region across iterations
 - Fixed ABX p-value: use one-tailed binomial test instead of raw PMF
 - Fixed audio engine lifecycle: waveform, track switching, seek, and multi-round playback
 - Initial implementation of Browser ABX listening test app
