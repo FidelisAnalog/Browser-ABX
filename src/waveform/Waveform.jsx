@@ -13,9 +13,9 @@
  * including at the edges of the waveform.
  */
 
-import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react';
-import { Box } from '@mui/material';
-import { averageChannels, downsampleRange } from './generateWaveform';
+import React, { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect, useImperativeHandle } from 'react';
+import { Box, useTheme } from '@mui/material';
+import { averageChannels, downsampleRange, buildEnvelopePath, isFullRange, isViewZoomed, EPSILON } from './generateWaveform';
 import LoopRegion from './LoopRegion';
 import Playhead from './Playhead';
 import Timeline from './Timeline';
@@ -24,13 +24,12 @@ import OverviewBar from './OverviewBar';
 const WAVEFORM_HEIGHT = 120;
 const TIMELINE_HEIGHT = 24;
 const TOTAL_HEIGHT = WAVEFORM_HEIGHT + TIMELINE_HEIGHT;
-const WAVEFORM_COLOR = '#1976d2';
-const WAVEFORM_BG = '#f5f5f5';
 
 // Handle hit area: 44px total, biased outward from the loop region.
 // Start handle extends left, end handle extends right.
 const HIT_OUTWARD = 40;  // px extending away from loop region
 const HIT_INWARD = 4;    // px extending into loop region
+const HIT_MOUSE = 8;     // px hit zone for mouse (narrower than touch)
 const MIN_LOOP = 0.5;    // minimum loop duration in seconds
 
 // Zoom constraints
@@ -47,25 +46,34 @@ const PAN_FACTOR = 0.25;         // pan by 25% of view width per Shift+scroll st
  * @param {[number, number]} props.loopRegion - [start, end] in seconds
  * @param {(time: number) => void} props.onSeek - Seek callback
  * @param {(start: number, end: number) => void} props.onLoopRegionChange - Loop region change callback
+ * @param {({ isZoomed: boolean, isMaxZoom: boolean }) => void} props.onZoomChange - Zoom state change callback
  */
-const Waveform = React.memo(function Waveform({
+const Waveform = React.memo(React.forwardRef(function Waveform({
   channelData,
   duration,
   currentTimeRef,
   loopRegion,
   onSeek,
   onLoopRegionChange,
-}) {
+  onZoomChange,
+}, ref) {
+  const theme = useTheme();
   const containerRef = useRef(null);
   const svgRef = useRef(null);
-  const dragActiveRef = useRef(false);
   const draggingRef = useRef(null); // 'start' | 'end' | null
   const containerRectRef = useRef(null);
-  const panDragRef = useRef({ startX: null, moved: false });
+  const panDragRef = useRef({ startX: null, moved: false, viewStart: 0, viewEnd: 0 });
   const scrollRef = useRef(null);
   const scrollCausedViewChangeRef = useRef(false);
   const programmaticScrollRef = useRef(false);
-  const scrollEndTimerRef = useRef(null);
+  const mainPlayheadRef = useRef(null);
+  const overviewPlayheadRef = useRef(null);
+  const overviewWidthRef = useRef(0);
+
+  // --- Gesture state machine ---
+  // Single enum replaces dragActiveRef, gestureActiveRef, overviewDraggingRef.
+  // Values: 'idle' | 'wheel' | 'pinch' | 'overviewDrag' | 'handleDrag' | 'scroll' | 'waveformPan'
+  const gestureRef = useRef('idle');
 
   // Refs so pointer handlers always read current values (no stale closures)
   const loopRegionRef = useRef(loopRegion);
@@ -85,7 +93,6 @@ const Waveform = React.memo(function Waveform({
 
   // --- Playhead follow state ---
   const followActiveRef = useRef(false);
-  const gestureActiveRef = useRef(false);
 
   // Reset zoom when duration changes (new test loaded)
   useEffect(() => {
@@ -129,32 +136,10 @@ const Waveform = React.memo(function Waveform({
   }, [averaged, containerWidth, viewStart, viewEnd, duration]);
 
   // Build SVG path for the waveform envelope
-  const waveformPath = useMemo(() => {
-    if (waveformData.length === 0) return '';
-
-    const midY = WAVEFORM_HEIGHT / 2;
-    const scale = WAVEFORM_HEIGHT / 2;
-    const barWidth = containerWidth / waveformData.length;
-
-    // Upper envelope (max values, left to right)
-    let upper = `M 0 ${midY}`;
-    for (let i = 0; i < waveformData.length; i++) {
-      const x = i * barWidth;
-      const y = midY - waveformData[i].max * scale;
-      upper += ` L ${x} ${y}`;
-    }
-    upper += ` L ${containerWidth} ${midY}`;
-
-    // Lower envelope (min values, right to left)
-    let lower = '';
-    for (let i = waveformData.length - 1; i >= 0; i--) {
-      const x = i * barWidth;
-      const y = midY - waveformData[i].min * scale;
-      lower += ` L ${x} ${y}`;
-    }
-
-    return upper + lower + ' Z';
-  }, [waveformData, containerWidth]);
+  const waveformPath = useMemo(
+    () => buildEnvelopePath(waveformData, containerWidth, WAVEFORM_HEIGHT),
+    [waveformData, containerWidth]
+  );
 
   // --- Coordinate transforms (zoom-aware) ---
 
@@ -180,12 +165,6 @@ const Waveform = React.memo(function Waveform({
   const timeToXRef = useRef(timeToX);
   timeToXRef.current = timeToX;
 
-  // Stable ref-based timeToX for Playhead (avoids re-creating on every zoom)
-  const timeToXForPlayhead = useCallback(
-    (time) => timeToXRef.current(time),
-    []
-  );
-
   // --- User-initiated viewport changes ---
   // All user zoom/pan goes through setUserView. Disengages follow immediately,
   // then re-engages only if playhead is in the new bounds AND no gesture is active.
@@ -194,7 +173,7 @@ const Waveform = React.memo(function Waveform({
     followActiveRef.current = false;
     setViewStart(newStart);
     setViewEnd(newEnd);
-    if (!gestureActiveRef.current) {
+    if (gestureRef.current === 'idle') {
       const pos = currentTimeRef ? currentTimeRef.current : 0;
       followActiveRef.current = (pos >= newStart && pos <= newEnd);
     }
@@ -270,9 +249,22 @@ const Waveform = React.memo(function Waveform({
     setUserView(0, durationRef.current);
   }, [setUserView]);
 
-  // Expose zoom controls via ref for external use (overview bar)
+  // Expose zoom controls via ref for internal use (overview bar)
   const zoomControlsRef = useRef({ applyZoom, applyPan, resetZoom, setViewStart, setViewEnd });
   zoomControlsRef.current = { applyZoom, applyPan, resetZoom, setViewStart, setViewEnd };
+
+  // Expose zoom methods to parent via forwardRef
+  useImperativeHandle(ref, () => ({
+    zoomIn() {
+      const pos = currentTimeRef ? currentTimeRef.current : 0;
+      applyZoom(-30, timeToXRef.current(pos));
+    },
+    zoomOut() {
+      const pos = currentTimeRef ? currentTimeRef.current : 0;
+      applyZoom(30, timeToXRef.current(pos));
+    },
+    resetZoom,
+  }), [applyZoom, resetZoom, currentTimeRef]);
 
   // --- Playhead follow (iZotope RX-style) ---
   // Follow is opt-in: engages when user pans/zooms viewport to include the
@@ -286,18 +278,42 @@ const Waveform = React.memo(function Waveform({
     let rafId = null;
     let lastPos = currentTimeRef.current;
     let wasMoving = false;
+    let lastMainX = -1;
+    let lastOverviewX = -1;
 
-    const checkFollow = () => {
+    const tick = () => {
+      const pos = currentTimeRef.current;
+      const dur = durationRef.current;
+
+      // Update main playhead
+      if (mainPlayheadRef.current) {
+        const x = timeToXRef.current(pos);
+        if (x !== lastMainX) {
+          mainPlayheadRef.current.setAttribute('x1', x);
+          mainPlayheadRef.current.setAttribute('x2', x);
+          lastMainX = x;
+        }
+      }
+
+      // Update overview playhead
+      if (overviewPlayheadRef.current) {
+        const ow = overviewWidthRef.current;
+        const x = dur > 0 && ow > 0 ? (pos / dur) * ow : 0;
+        if (x !== lastOverviewX) {
+          overviewPlayheadRef.current.setAttribute('x1', x);
+          overviewPlayheadRef.current.setAttribute('x2', x);
+          lastOverviewX = x;
+        }
+      }
+
+      // Follow-mode auto-scroll
       const vs = viewStartRef.current;
       const ve = viewEndRef.current;
-      const dur = durationRef.current;
       const viewDur = ve - vs;
-      const isZoomed = vs > 0.001 || ve < dur - 0.001;
-      const pos = currentTimeRef.current;
+      const zoomed = isViewZoomed(vs, ve, dur);
       const isMoving = Math.abs(pos - lastPos) > 0.0001;
 
-      // Detect playback start — engage follow if playhead is in view
-      if (isMoving && !wasMoving && isZoomed) {
+      if (isMoving && !wasMoving && zoomed) {
         if (pos >= vs && pos <= ve) {
           followActiveRef.current = true;
         }
@@ -306,16 +322,14 @@ const Waveform = React.memo(function Waveform({
       wasMoving = isMoving;
       lastPos = pos;
 
-      if (followActiveRef.current && isMoving && isZoomed) {
+      if (followActiveRef.current && isMoving && zoomed) {
         if (pos > ve) {
-          // Playhead past right edge — page forward
           let newStart = ve;
           let newEnd = ve + viewDur;
           if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
           setViewStart(newStart);
           setViewEnd(newEnd);
         } else if (pos < vs) {
-          // Playhead past left edge (loop wrap) — snap to show playhead
           let newStart = pos;
           let newEnd = pos + viewDur;
           if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
@@ -325,10 +339,10 @@ const Waveform = React.memo(function Waveform({
         }
       }
 
-      rafId = requestAnimationFrame(checkFollow);
+      rafId = requestAnimationFrame(tick);
     };
 
-    rafId = requestAnimationFrame(checkFollow);
+    rafId = requestAnimationFrame(tick);
     return () => { if (rafId) cancelAnimationFrame(rafId); };
   }, [currentTimeRef]);
 
@@ -391,10 +405,10 @@ const Waveform = React.memo(function Waveform({
     let lastGestureScale = 1;
 
     const startWheelGesture = () => {
-      gestureActiveRef.current = true;
+      gestureRef.current = 'wheel';
       if (gestureEndTimer) clearTimeout(gestureEndTimer);
       gestureEndTimer = setTimeout(() => {
-        gestureActiveRef.current = false;
+        if (gestureRef.current === 'wheel') gestureRef.current = 'idle';
         checkFollowEngage();
       }, 150);
     };
@@ -422,8 +436,7 @@ const Waveform = React.memo(function Waveform({
           const vs = viewStartRef.current;
           const ve = viewEndRef.current;
           const dur = durationRef.current;
-          const isZoomed = vs > 0.001 || ve < dur - 0.001;
-          if (isZoomed) {
+          if (isViewZoomed(vs, ve, dur)) {
             startWheelGesture();
             applyPan(e.deltaX / 500);
           }
@@ -471,6 +484,7 @@ const Waveform = React.memo(function Waveform({
     let initialViewStart = 0;
     let initialViewEnd = 0;
     let pinchActive = false;
+    let gestureEndTimer = null;
 
     const getDistance = (t1, t2) =>
       Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
@@ -481,7 +495,7 @@ const Waveform = React.memo(function Waveform({
     const handleTouchStart = (e) => {
       if (e.touches.length === 2) {
         pinchActive = true;
-        gestureActiveRef.current = true;
+        gestureRef.current = 'pinch';
         initialDistance = getDistance(e.touches[0], e.touches[1]);
         initialViewStart = viewStartRef.current;
         initialViewEnd = viewEndRef.current;
@@ -514,9 +528,15 @@ const Waveform = React.memo(function Waveform({
     };
 
     const handleTouchEnd = () => {
+      if (!pinchActive) return;
       pinchActive = false;
-      gestureActiveRef.current = false;
-      checkFollowEngage();
+      // Debounce gesture end — fingers lift sequentially, not simultaneously.
+      // Without this, follow re-engages between the first and second finger lift.
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
+      gestureEndTimer = setTimeout(() => {
+        if (gestureRef.current === 'pinch') gestureRef.current = 'idle';
+        checkFollowEngage();
+      }, 150);
     };
 
     el.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -527,6 +547,7 @@ const Waveform = React.memo(function Waveform({
       el.removeEventListener('touchstart', handleTouchStart);
       el.removeEventListener('touchmove', handleTouchMove);
       el.removeEventListener('touchend', handleTouchEnd);
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
     };
   }, [setUserView, checkFollowEngage]);
 
@@ -542,12 +563,14 @@ const Waveform = React.memo(function Waveform({
         programmaticScrollRef.current = false;
         return;
       }
+      // Skip scroll-driven updates during overview bar drag
+      if (gestureRef.current === 'overviewDrag') return;
       const dur = durationRef.current;
       const vs = viewStartRef.current;
       const ve = viewEndRef.current;
       const viewDur = ve - vs;
       const w = widthRef.current;
-      if (dur <= 0 || w <= 0 || viewDur >= dur - 0.001) return;
+      if (dur <= 0 || w <= 0 || viewDur >= dur - EPSILON) return;
 
       const spacerW = w * (dur / viewDur);
       const maxScroll = spacerW - w;
@@ -558,10 +581,10 @@ const Waveform = React.memo(function Waveform({
       const newEnd = newStart + viewDur;
 
       scrollCausedViewChangeRef.current = true;
-      gestureActiveRef.current = true;
+      gestureRef.current = 'scroll';
       if (gestureEndTimer) clearTimeout(gestureEndTimer);
       gestureEndTimer = setTimeout(() => {
-        gestureActiveRef.current = false;
+        if (gestureRef.current === 'scroll') gestureRef.current = 'idle';
         checkFollowEngage();
       }, 150);
 
@@ -579,10 +602,16 @@ const Waveform = React.memo(function Waveform({
   }, [setUserView, checkFollowEngage, containerWidth]);
 
   // --- View → scroll sync (zoom, seek, playhead follow update scroll position) ---
+  // useLayoutEffect so scrollLeft is written in the same commit as the spacer
+  // resize — before the browser processes scroll clamping from the resize.
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // During overview bar drags, the view is driven by React state (not scroll).
+    // Skip scroll sync — the scrolling thread can do whatever it wants.
+    // Correct scrollLeft is written at gesture end.
+    if (gestureRef.current === 'overviewDrag') return;
     if (scrollCausedViewChangeRef.current) {
       scrollCausedViewChangeRef.current = false;
       return;
@@ -590,7 +619,7 @@ const Waveform = React.memo(function Waveform({
     const dur = duration;
     const viewDur = viewEnd - viewStart;
     const w = containerWidth;
-    if (dur <= 0 || w <= 0 || viewDur >= dur - 0.001) {
+    if (dur <= 0 || w <= 0 || viewDur >= dur - EPSILON) {
       el.scrollLeft = 0;
       return;
     }
@@ -600,17 +629,11 @@ const Waveform = React.memo(function Waveform({
     el.scrollLeft = (viewStart / (dur - viewDur)) * maxScroll;
   }, [viewStart, viewEnd, duration, containerWidth]);
 
-  // --- Double-click to reset zoom ---
-
-  const handleDoubleClick = useCallback(() => {
-    resetZoom();
-  }, [resetZoom]);
-
-  // --- Waveform pointer handlers: click-to-seek ---
+  // --- Waveform pointer handlers: click-to-seek + drag-to-pan ---
 
   const handleWaveformPointerDown = useCallback(
     (e) => {
-      if (dragActiveRef.current) return;
+      if (gestureRef.current === 'handleDrag') return;
       if (!svgRef.current || duration <= 0) return;
       // Don't capture pointer for touch — let browser handle native scroll
       if (e.pointerType !== 'touch') {
@@ -620,6 +643,8 @@ const Waveform = React.memo(function Waveform({
       panDragRef.current = {
         startX: e.clientX - rect.left,
         moved: false,
+        viewStart: viewStartRef.current,
+        viewEnd: viewEndRef.current,
       };
     },
     [duration]
@@ -635,8 +660,25 @@ const Waveform = React.memo(function Waveform({
       if (!pd.moved && Math.abs(x - pd.startX) > 3) {
         pd.moved = true;
       }
+      // Mouse drag-to-pan (touch uses native scroll instead)
+      if (pd.moved && e.pointerType !== 'touch') {
+        const w = widthRef.current;
+        const dur = durationRef.current;
+        if (w > 0 && dur > 0) {
+          const origViewDur = pd.viewEnd - pd.viewStart;
+          const dx = x - pd.startX;
+          const dTime = -(dx / w) * origViewDur; // negative: drag right = pan left
+          let newStart = pd.viewStart + dTime;
+          let newEnd = pd.viewEnd + dTime;
+          if (newStart < 0) { newStart = 0; newEnd = origViewDur; }
+          if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - origViewDur); }
+          gestureRef.current = 'waveformPan';
+          svgRef.current.style.cursor = 'grabbing';
+          setUserView(newStart, newEnd);
+        }
+      }
     },
-    []
+    [setUserView]
   );
 
   const handleWaveformPointerUp = useCallback(
@@ -650,14 +692,18 @@ const Waveform = React.memo(function Waveform({
         const x = e.clientX - rect.left;
         const time = xToTime(x);
         const [loopStart, loopEnd] = loopRegionRef.current;
-        const isFullRange = loopStart <= 0.001 && loopEnd >= duration - 0.001;
-        if (!isFullRange && (time < loopStart || time > loopEnd)) return;
+        if (!isFullRange(loopStart, loopEnd, duration) && (time < loopStart || time > loopEnd)) return;
         onSeek(time);
         followActiveRef.current = true;
+      } else {
+        // End of drag-to-pan
+        if (svgRef.current) svgRef.current.style.cursor = '';
+        if (gestureRef.current === 'waveformPan') gestureRef.current = 'idle';
+        checkFollowEngage();
       }
       pd.startX = null;
     },
-    [duration, onSeek, xToTime]
+    [duration, onSeek, xToTime, checkFollowEngage]
   );
 
   const handleWaveformPointerCancel = useCallback(() => {
@@ -668,11 +714,19 @@ const Waveform = React.memo(function Waveform({
 
   const handlePointerDown = useCallback(
     (handle) => (e) => {
+      // For mouse, narrow the effective hit zone around the handle line
+      if (e.pointerType === 'mouse') {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        // Handle line is at HIT_INWARD from the inner edge of the div
+        const lineX = handle === 'start' ? rect.width - HIT_INWARD : HIT_INWARD;
+        if (Math.abs(localX - lineX) > HIT_MOUSE) return;
+      }
       e.preventDefault();
       e.stopPropagation();
       e.target.setPointerCapture(e.pointerId);
       draggingRef.current = handle;
-      dragActiveRef.current = true;
+      gestureRef.current = 'handleDrag';
       containerRectRef.current = containerRef.current?.getBoundingClientRect();
     },
     []
@@ -720,9 +774,11 @@ const Waveform = React.memo(function Waveform({
   const handlePointerUp = useCallback(
     () => {
       draggingRef.current = null;
-      // Clear drag flag after a microtask so the click event (which fires
-      // synchronously after pointerup) still sees dragActiveRef=true
-      setTimeout(() => { dragActiveRef.current = false; }, 0);
+      // Clear gesture after a microtask so the click event (which fires
+      // synchronously after pointerup) still sees handleDrag active
+      setTimeout(() => {
+        if (gestureRef.current === 'handleDrag') gestureRef.current = 'idle';
+      }, 0);
     },
     []
   );
@@ -741,10 +797,24 @@ const Waveform = React.memo(function Waveform({
   const endHitVisible = endHitRight > endHitLeft;
 
   // Detect if zoomed for UI hints
-  const isZoomed = viewStart > 0.001 || viewEnd < duration - 0.001;
+  const isZoomed = isViewZoomed(viewStart, viewEnd, duration);
+  const viewDur = viewEnd - viewStart;
+  const isMaxZoom = viewDur <= MIN_VIEW_DURATION * 1.01; // 1% tolerance
+
+  // Notify parent of zoom state changes
+  const onZoomChangeRef = useRef(onZoomChange);
+  onZoomChangeRef.current = onZoomChange;
+  const prevZoomStateRef = useRef(null);
+  useEffect(() => {
+    if (!onZoomChangeRef.current) return;
+    const key = `${isZoomed}|${isMaxZoom}`;
+    if (key !== prevZoomStateRef.current) {
+      prevZoomStateRef.current = key;
+      onZoomChangeRef.current({ isZoomed, isMaxZoom });
+    }
+  }, [isZoomed, isMaxZoom]);
 
   // Spacer width for native scroll — proportional to zoom ratio
-  const viewDur = viewEnd - viewStart;
   const spacerWidth = isZoomed && viewDur > 0
     ? containerWidth * (duration / viewDur)
     : containerWidth;
@@ -756,10 +826,28 @@ const Waveform = React.memo(function Waveform({
 
   // Overview bar gesture callbacks
   const handleOverviewGestureStart = useCallback(() => {
-    gestureActiveRef.current = true;
+    gestureRef.current = 'overviewDrag';
   }, []);
   const handleOverviewGestureEnd = useCallback(() => {
-    gestureActiveRef.current = false;
+    // Write correct scrollLeft BEFORE clearing overviewDrag.
+    // The useLayoutEffect skips writes while gesture is overviewDrag —
+    // clearing it first creates a race where both this code and the
+    // useLayoutEffect write scrollLeft in the same commit.
+    const el = scrollRef.current;
+    if (el) {
+      const dur = durationRef.current;
+      const vs = viewStartRef.current;
+      const ve = viewEndRef.current;
+      const viewDur = ve - vs;
+      const w = widthRef.current;
+      if (dur > 0 && w > 0 && viewDur < dur - EPSILON) {
+        const spacerW = w * (dur / viewDur);
+        const maxSL = spacerW - w;
+        programmaticScrollRef.current = true;
+        el.scrollLeft = (vs / (dur - viewDur)) * maxSL;
+      }
+    }
+    gestureRef.current = 'idle';
     checkFollowEngage();
   }, [checkFollowEngage]);
 
@@ -767,15 +855,16 @@ const Waveform = React.memo(function Waveform({
     <>
     {/* Overview bar — only visible when zoomed */}
     <OverviewBar
+      ref={overviewPlayheadRef}
       averaged={averaged}
       duration={duration}
       viewStart={viewStart}
       viewEnd={viewEnd}
       onViewChange={handleViewChange}
-      currentTimeRef={currentTimeRef}
       loopRegion={loopRegion}
       onGestureStart={handleOverviewGestureStart}
       onGestureEnd={handleOverviewGestureEnd}
+      overviewWidthRef={overviewWidthRef}
     />
     <Box
       ref={containerRef}
@@ -783,10 +872,12 @@ const Waveform = React.memo(function Waveform({
         width: '100%',
         position: 'relative',
         userSelect: 'none',
+        WebkitTapHighlightColor: 'transparent',
         overscrollBehaviorX: 'none',
+        touchAction: 'none',
         cursor: 'pointer',
         borderRadius: 1,
-        border: '1px solid #e0e0e0',
+        border: `1px solid ${theme.palette.waveform.border}`,
         // Reserve space so layout doesn't jump when SVG appears
         minHeight: TOTAL_HEIGHT,
       }}
@@ -802,7 +893,7 @@ const Waveform = React.memo(function Waveform({
           overflowY: 'hidden',
           overscrollBehaviorX: 'none',
           WebkitOverflowScrolling: 'touch',
-          touchAction: 'pan-x',
+          touchAction: 'pan-x pan-y',
           scrollbarWidth: 'none',
           '&::-webkit-scrollbar': { display: 'none' },
         }}
@@ -816,11 +907,10 @@ const Waveform = React.memo(function Waveform({
             onPointerMove={handleWaveformPointerMove}
             onPointerUp={handleWaveformPointerUp}
             onPointerCancel={handleWaveformPointerCancel}
-            onDoubleClick={handleDoubleClick}
             style={{ display: 'block', position: 'sticky', left: 0 }}
           >
             {/* Background */}
-            <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={WAVEFORM_BG} />
+            <rect x={0} y={0} width={containerWidth} height={WAVEFORM_HEIGHT} fill={theme.palette.waveform.background} />
 
             {/* Loop region visuals (shading, lines, triangles — no interaction) */}
             <LoopRegion
@@ -832,7 +922,7 @@ const Waveform = React.memo(function Waveform({
             />
 
             {/* Waveform */}
-            <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.7} />
+            <path d={waveformPath} fill={theme.palette.waveform.fill} opacity={0.7} />
 
             {/* Center line */}
             <line
@@ -840,14 +930,13 @@ const Waveform = React.memo(function Waveform({
               y1={WAVEFORM_HEIGHT / 2}
               x2={containerWidth}
               y2={WAVEFORM_HEIGHT / 2}
-              stroke="#bdbdbd"
+              stroke={theme.palette.waveform.grid}
               strokeWidth={0.5}
             />
 
             {/* Playhead */}
             <Playhead
-              timeRef={currentTimeRef}
-              timeToX={timeToXForPlayhead}
+              ref={mainPlayheadRef}
               height={WAVEFORM_HEIGHT}
             />
 
@@ -884,11 +973,22 @@ const Waveform = React.memo(function Waveform({
               left: startHitLeft,
               width: startHitRight - startHitLeft,
               height: '100%',
-              cursor: 'col-resize',
+              cursor: 'default',
               touchAction: 'none',
               pointerEvents: 'auto',
+              userSelect: 'none',
+              WebkitTouchCallout: 'none',
             }}
-          />}
+          >
+            {/* Narrow cursor zone for mouse — centered on handle line */}
+            <div style={{
+              position: 'absolute',
+              right: 0,
+              width: 8,
+              height: '100%',
+              cursor: 'col-resize',
+            }} />
+          </div>}
           {/* End handle hit area — biased right (outward) */}
           {endHitVisible && <div
             onPointerDown={handlePointerDown('end')}
@@ -899,17 +999,28 @@ const Waveform = React.memo(function Waveform({
               left: endHitLeft,
               width: endHitRight - endHitLeft,
               height: '100%',
-              cursor: 'col-resize',
+              cursor: 'default',
               touchAction: 'none',
               pointerEvents: 'auto',
+              userSelect: 'none',
+              WebkitTouchCallout: 'none',
             }}
-          />}
+          >
+            {/* Narrow cursor zone for mouse — centered on handle line */}
+            <div style={{
+              position: 'absolute',
+              left: 0,
+              width: 8,
+              height: '100%',
+              cursor: 'col-resize',
+            }} />
+          </div>}
         </div>
 
       </>}
     </Box>
     </>
   );
-});
+}));
 
 export default Waveform;

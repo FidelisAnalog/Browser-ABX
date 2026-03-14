@@ -6,7 +6,7 @@
 import React from 'react';
 import {
   Box, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Tooltip, Typography,
+  TableHead, TableRow, Tooltip, Typography, useTheme,
 } from '@mui/material';
 import Label from './Label';
 
@@ -43,6 +43,7 @@ function interpretStaircase(stats) {
  * @param {number} props.jnd - JND estimate
  */
 function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
+  const theme = useTheme();
   if (trials.length === 0) return null;
 
   const width = 500;
@@ -94,7 +95,7 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
             key={`grid-${l}`}
             x1={padding.left} y1={yScale(l)}
             x2={width - padding.right} y2={yScale(l)}
-            stroke="#f0f0f0" strokeWidth={1}
+            stroke={theme.palette.chart.grid} strokeWidth={1}
           />
         ))}
 
@@ -102,11 +103,11 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
         <line
           x1={padding.left} y1={yScale(jnd)}
           x2={width - padding.right} y2={yScale(jnd)}
-          stroke="#1976d2" strokeWidth={1} strokeDasharray="4,3"
+          stroke={theme.palette.primary.main} strokeWidth={1} strokeDasharray="4,3"
         />
         <text
           x={width - padding.right + 3} y={yScale(jnd) + 3}
-          fontSize={9} fill="#1976d2"
+          fontSize={9} fill={theme.palette.primary.main}
         >
           JND
         </text>
@@ -115,7 +116,7 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
         <polyline
           points={points}
           fill="none"
-          stroke="#333"
+          stroke={theme.palette.chart.line}
           strokeWidth={1.5}
         />
 
@@ -125,7 +126,7 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
             key={i}
             cx={xScale(i)} cy={yScale(t.level)}
             r={3}
-            fill={t.isCorrect ? '#66bb6a' : '#ef5350'}
+            fill={t.isCorrect ? theme.palette.success.light : theme.palette.error.light}
           />
         ))}
 
@@ -136,7 +137,7 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
             cx={xScale(ti)} cy={yScale(trials[ti].level)}
             r={6}
             fill="none"
-            stroke="#1976d2"
+            stroke={theme.palette.primary.main}
             strokeWidth={1.5}
           />
         ))}
@@ -145,20 +146,20 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
         <line
           x1={padding.left} y1={padding.top}
           x2={padding.left} y2={height - padding.bottom}
-          stroke="#999" strokeWidth={1}
+          stroke={theme.palette.chart.axis} strokeWidth={1}
         />
         {yTicks.map((l) => (
           <text
             key={`y-${l}`}
             x={padding.left - 6} y={yScale(l) + 3}
-            textAnchor="end" fontSize={10} fill="#666"
+            textAnchor="end" fontSize={10} fill={theme.palette.chart.label}
           >
             {l}
           </text>
         ))}
         <text
           x={12} y={height / 2}
-          textAnchor="middle" fontSize={10} fill="#666"
+          textAnchor="middle" fontSize={10} fill={theme.palette.chart.label}
           transform={`rotate(-90, 12, ${height / 2})`}
         >
           Level
@@ -168,13 +169,13 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
         <line
           x1={padding.left} y1={height - padding.bottom}
           x2={width - padding.right} y2={height - padding.bottom}
-          stroke="#999" strokeWidth={1}
+          stroke={theme.palette.chart.axis} strokeWidth={1}
         />
         {xTicks.map((i) => (
           <text
             key={`x-${i}`}
             x={xScale(i)} y={height - padding.bottom + 14}
-            textAnchor="middle" fontSize={10} fill="#666"
+            textAnchor="middle" fontSize={10} fill={theme.palette.chart.label}
           >
             {i + 1}
           </text>
@@ -182,7 +183,7 @@ function StaircasePlot({ trials, reversalLevels, nLevels, jnd }) {
         <text
           x={(padding.left + width - padding.right) / 2}
           y={height - 4}
-          textAnchor="middle" fontSize={10} fill="#666"
+          textAnchor="middle" fontSize={10} fill={theme.palette.chart.label}
         >
           Trial
         </text>

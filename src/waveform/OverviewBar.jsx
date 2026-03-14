@@ -9,19 +9,14 @@
  * - Click outside the viewport to recenter on that position
  */
 
-import React, { useMemo, useRef, useEffect, useState, useId } from 'react';
-import { Box } from '@mui/material';
-import { downsampleRange } from './generateWaveform';
+import React, { useMemo, useRef, useEffect, useState, useCallback, useId } from 'react';
+import { Box, useTheme } from '@mui/material';
+import { downsampleRange, buildEnvelopePath, isFullRange, isViewZoomed } from './generateWaveform';
 
 const OVERVIEW_HEIGHT = 30;
-const PLAYHEAD_COLOR = '#d32f2f';
 const PLAYHEAD_WIDTH = 1.5;
-const WAVEFORM_COLOR = '#90a4ae';
-const WAVEFORM_ACTIVE_COLOR = '#1976d2';
-const BG_COLOR = '#eceff1';
-const VIEWPORT_BORDER = '#1976d2';
-const HANDLE_WIDTH = 6; // px hit area on viewport edges
-const LOOP_REGION_COLOR = 'rgba(255, 152, 0, 0.15)';
+const HANDLE_WIDTH = 20; // px hit area on viewport edges
+const CURSOR_WIDTH = 6;  // px cursor zone for mouse (narrower than hit area)
 
 /**
  * @param {object} props
@@ -30,32 +25,48 @@ const LOOP_REGION_COLOR = 'rgba(255, 152, 0, 0.15)';
  * @param {number} props.viewStart - Start of visible range in seconds
  * @param {number} props.viewEnd - End of visible range in seconds
  * @param {(start: number, end: number) => void} props.onViewChange - Callback to update view range
- * @param {{ current: number }} props.currentTimeRef - Ref containing current playback position
  * @param {[number, number]} props.loopRegion - [start, end] loop cursors in seconds
  * @param {() => void} props.onGestureStart - Called when a drag gesture begins
  * @param {() => void} props.onGestureEnd - Called when a drag gesture ends
+ * @param {{ current: number }} props.overviewWidthRef - Ref written with container width for parent rAF loop
+ * @param {React.Ref} ref - Forwarded ref for the playhead SVG line element
  */
-const OverviewBar = React.memo(function OverviewBar({
+const OverviewBar = React.memo(React.forwardRef(function OverviewBar({
   averaged,
   duration,
   viewStart,
   viewEnd,
   onViewChange,
-  currentTimeRef,
   loopRegion,
   onGestureStart,
   onGestureEnd,
-}) {
+  overviewWidthRef,
+}, ref) {
+  const theme = useTheme();
   const clipId = useId();
   const containerRef = useRef(null);
-  const playheadRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const draggingRef = useRef(null); // 'pan' | 'left' | 'right' | null
   const durationRef = useRef(duration);
   durationRef.current = duration;
   const containerWidthRef = useRef(containerWidth);
   containerWidthRef.current = containerWidth;
+  if (overviewWidthRef) overviewWidthRef.current = containerWidth;
   const dragStartRef = useRef({ x: 0, viewStart: 0, viewEnd: 0 });
+
+  // Refs so pointer handlers always read current values (no stale closures)
+  const viewStartRef = useRef(viewStart);
+  viewStartRef.current = viewStart;
+  const viewEndRef = useRef(viewEnd);
+  viewEndRef.current = viewEnd;
+  const vpLeftRef = useRef(0);
+  const vpRightRef = useRef(0);
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+  const onGestureStartRef = useRef(onGestureStart);
+  onGestureStartRef.current = onGestureStart;
+  const onGestureEndRef = useRef(onGestureEnd);
+  onGestureEndRef.current = onGestureEnd;
 
   // Measure container width
   useEffect(() => {
@@ -69,28 +80,6 @@ const OverviewBar = React.memo(function OverviewBar({
     return () => observer.disconnect();
   }, []);
 
-  // Self-animating playhead — reads timeRef each frame, updates DOM directly
-  useEffect(() => {
-    if (!currentTimeRef) return;
-    let rafId = null;
-    let lastX = -1;
-    const animate = () => {
-      if (playheadRef.current) {
-        const dur = durationRef.current;
-        const w = containerWidthRef.current;
-        const x = dur > 0 && w > 0 ? (currentTimeRef.current / dur) * w : 0;
-        if (x !== lastX) {
-          playheadRef.current.setAttribute('x1', x);
-          playheadRef.current.setAttribute('x2', x);
-          lastX = x;
-        }
-      }
-      rafId = requestAnimationFrame(animate);
-    };
-    rafId = requestAnimationFrame(animate);
-    return () => { if (rafId) cancelAnimationFrame(rafId); };
-  }, [currentTimeRef]);
-
   // Generate overview waveform data (full file, low resolution)
   const waveformData = useMemo(
     () => downsampleRange(averaged, Math.max(1, Math.floor(containerWidth))),
@@ -98,138 +87,133 @@ const OverviewBar = React.memo(function OverviewBar({
   );
 
   // Build SVG path
-  const waveformPath = useMemo(() => {
-    if (waveformData.length === 0 || containerWidth <= 0) return '';
-
-    const midY = OVERVIEW_HEIGHT / 2;
-    const scale = OVERVIEW_HEIGHT / 2;
-    const barWidth = containerWidth / waveformData.length;
-
-    let upper = `M 0 ${midY}`;
-    for (let i = 0; i < waveformData.length; i++) {
-      const x = i * barWidth;
-      const y = midY - waveformData[i].max * scale;
-      upper += ` L ${x} ${y}`;
-    }
-    upper += ` L ${containerWidth} ${midY}`;
-
-    let lower = '';
-    for (let i = waveformData.length - 1; i >= 0; i--) {
-      const x = i * barWidth;
-      const y = midY - waveformData[i].min * scale;
-      lower += ` L ${x} ${y}`;
-    }
-
-    return upper + lower + ' Z';
-  }, [waveformData, containerWidth]);
+  const waveformPath = useMemo(
+    () => buildEnvelopePath(waveformData, containerWidth, OVERVIEW_HEIGHT),
+    [waveformData, containerWidth]
+  );
 
   // Viewport rectangle position
   const vpLeft = duration > 0 ? (viewStart / duration) * containerWidth : 0;
   const vpRight = duration > 0 ? (viewEnd / duration) * containerWidth : containerWidth;
   const vpWidth = vpRight - vpLeft;
+  vpLeftRef.current = vpLeft;
+  vpRightRef.current = vpRight;
 
   // Detect zoom for viewport overlay visibility
-  const isZoomed = viewStart > 0.001 || viewEnd < duration - 0.001;
+  const isZoomed = isViewZoomed(viewStart, viewEnd, duration);
 
   // Convert x pixel to time
-  const xToTime = (x) => duration > 0 ? Math.max(0, Math.min((x / containerWidth) * duration, duration)) : 0;
+  const xToTime = useCallback(
+    (x) => duration > 0 ? Math.max(0, Math.min((x / containerWidth) * duration, duration)) : 0,
+    [duration, containerWidth]
+  );
 
   // --- Pointer handlers ---
 
-  const handlePointerDown = (e) => {
-    e.preventDefault();
-    e.target.setPointerCapture(e.pointerId);
-    if (onGestureStart) onGestureStart();
+  const updateCursor = useCallback((e) => {
+    if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
+    const vl = vpLeftRef.current;
+    const vr = vpRightRef.current;
+    let cursor = 'pointer';
+    if (draggingRef.current === 'left' || draggingRef.current === 'right') {
+      cursor = 'col-resize';
+    } else if (draggingRef.current === 'pan') {
+      cursor = 'grabbing';
+    } else if (Math.abs(x - vl) <= CURSOR_WIDTH || Math.abs(x - vr) <= CURSOR_WIDTH) {
+      cursor = 'col-resize';
+    } else if (x >= vl && x <= vr) {
+      cursor = 'grab';
+    }
+    containerRef.current.style.cursor = cursor;
+  }, []);
 
-    // Determine what was clicked
-    if (Math.abs(x - vpLeft) <= HANDLE_WIDTH) {
+  const handlePointerDown = useCallback((e) => {
+    e.preventDefault();
+    e.target.setPointerCapture(e.pointerId);
+    if (onGestureStartRef.current) onGestureStartRef.current();
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const dur = durationRef.current;
+    const w = containerWidthRef.current;
+    const vl = vpLeftRef.current;
+    const vr = vpRightRef.current;
+    const vs = viewStartRef.current;
+    const ve = viewEndRef.current;
+
+    // Determine what was clicked — narrow hit zone for mouse, wide for touch
+    const hitWidth = e.pointerType === 'mouse' ? CURSOR_WIDTH : HANDLE_WIDTH;
+    if (Math.abs(x - vl) <= hitWidth) {
       draggingRef.current = 'left';
-    } else if (Math.abs(x - vpRight) <= HANDLE_WIDTH) {
+    } else if (Math.abs(x - vr) <= hitWidth) {
       draggingRef.current = 'right';
-    } else if (x >= vpLeft && x <= vpRight) {
+    } else if (x >= vl && x <= vr) {
       draggingRef.current = 'pan';
     } else {
       // Click/tap outside viewport — recenter
-      const clickTime = xToTime(x);
-      const viewDur = viewEnd - viewStart;
+      const clickTime = dur > 0 ? Math.max(0, Math.min((x / w) * dur, dur)) : 0;
+      const viewDur = ve - vs;
       let newStart = clickTime - viewDur / 2;
       let newEnd = clickTime + viewDur / 2;
       if (newStart < 0) { newStart = 0; newEnd = viewDur; }
-      if (newEnd > duration) { newEnd = duration; newStart = Math.max(0, duration - viewDur); }
-      onViewChange(newStart, newEnd);
+      if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - viewDur); }
+      onViewChangeRef.current(newStart, newEnd);
       // Start panning from the recentered position
       draggingRef.current = 'pan';
       dragStartRef.current = { x, viewStart: newStart, viewEnd: newEnd };
       return;
     }
 
-    dragStartRef.current = { x, viewStart, viewEnd };
-  };
+    dragStartRef.current = { x, viewStart: vs, viewEnd: ve };
+  }, []);
 
-  const updateCursor = (e) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    let cursor = 'pointer';
-    if (draggingRef.current === 'left' || draggingRef.current === 'right') {
-      cursor = 'col-resize';
-    } else if (draggingRef.current === 'pan') {
-      cursor = 'grabbing';
-    } else if (Math.abs(x - vpLeft) <= HANDLE_WIDTH || Math.abs(x - vpRight) <= HANDLE_WIDTH) {
-      cursor = 'col-resize';
-    } else if (x >= vpLeft && x <= vpRight) {
-      cursor = 'grab';
-    }
-    containerRef.current.style.cursor = cursor;
-  };
-
-  const handlePointerMove = (e) => {
+  const handlePointerMove = useCallback((e) => {
     updateCursor(e);
     if (!draggingRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const dx = x - dragStartRef.current.x;
-    const dTime = (dx / containerWidth) * duration;
+    const dur = durationRef.current;
+    const w = containerWidthRef.current;
+    const dTime = (dx / w) * dur;
     const origStart = dragStartRef.current.viewStart;
     const origEnd = dragStartRef.current.viewEnd;
     const origDur = origEnd - origStart;
+    const onChange = onViewChangeRef.current;
 
     if (draggingRef.current === 'pan') {
       let newStart = origStart + dTime;
       let newEnd = origEnd + dTime;
       if (newStart < 0) { newStart = 0; newEnd = origDur; }
-      if (newEnd > duration) { newEnd = duration; newStart = Math.max(0, duration - origDur); }
-      onViewChange(newStart, newEnd);
+      if (newEnd > dur) { newEnd = dur; newStart = Math.max(0, dur - origDur); }
+      onChange(newStart, newEnd);
     } else if (draggingRef.current === 'left') {
       let newStart = Math.max(0, origStart + dTime);
       if (newStart > origEnd) {
-        // Crossed over — swap to dragging right edge, reset drag origin
         draggingRef.current = 'right';
-        dragStartRef.current = { x, viewStart: origEnd, viewEnd: Math.min(duration, newStart) };
-        onViewChange(origEnd, Math.min(duration, newStart));
+        dragStartRef.current = { x, viewStart: origEnd, viewEnd: Math.min(dur, newStart) };
+        onChange(origEnd, Math.min(dur, newStart));
       } else {
-        onViewChange(newStart, origEnd);
+        onChange(newStart, origEnd);
       }
     } else if (draggingRef.current === 'right') {
-      let newEnd = Math.min(duration, origEnd + dTime);
+      let newEnd = Math.min(dur, origEnd + dTime);
       if (newEnd < origStart) {
-        // Crossed over — swap to dragging left edge, reset drag origin
         draggingRef.current = 'left';
         dragStartRef.current = { x, viewStart: Math.max(0, newEnd), viewEnd: origStart };
-        onViewChange(Math.max(0, newEnd), origStart);
+        onChange(Math.max(0, newEnd), origStart);
       } else {
-        onViewChange(origStart, newEnd);
+        onChange(origStart, newEnd);
       }
     }
-  };
+  }, [updateCursor]);
 
-  const handlePointerUp = (e) => {
+  const handlePointerUp = useCallback((e) => {
     draggingRef.current = null;
-    if (onGestureEnd) onGestureEnd();
+    if (onGestureEndRef.current) onGestureEndRef.current();
     updateCursor(e);
-  };
+  }, [updateCursor]);
 
 
   return (
@@ -242,8 +226,10 @@ const OverviewBar = React.memo(function OverviewBar({
         width: '100%',
         position: 'relative',
         userSelect: 'none',
+        WebkitTouchCallout: 'none',
+        WebkitTapHighlightColor: 'transparent',
         borderRadius: '4px 4px 0 0',
-        border: '1px solid #e0e0e0',
+        border: `1px solid ${theme.palette.waveform.border}`,
         borderBottom: 'none',
         overflow: 'hidden',
         minHeight: OVERVIEW_HEIGHT,
@@ -257,10 +243,10 @@ const OverviewBar = React.memo(function OverviewBar({
           style={{ display: 'block' }}
         >
           {/* Background */}
-          <rect x={0} y={0} width={containerWidth} height={OVERVIEW_HEIGHT} fill={BG_COLOR} />
+          <rect x={0} y={0} width={containerWidth} height={OVERVIEW_HEIGHT} fill={theme.palette.waveform.overviewBackground} />
 
           {/* Waveform — grey base */}
-          <path d={waveformPath} fill={WAVEFORM_COLOR} opacity={0.6} />
+          <path d={waveformPath} fill={theme.palette.waveform.overviewFill} opacity={0.6} />
 
           {/* Waveform — active region in blue (clipped to viewport) */}
           {isZoomed && <>
@@ -269,48 +255,46 @@ const OverviewBar = React.memo(function OverviewBar({
                 <rect x={vpLeft} y={0} width={vpWidth} height={OVERVIEW_HEIGHT} />
               </clipPath>
             </defs>
-            <path d={waveformPath} fill={WAVEFORM_ACTIVE_COLOR} opacity={0.7} clipPath={`url(#${clipId})`} />
+            <path d={waveformPath} fill={theme.palette.waveform.overviewActiveFill} opacity={0.7} clipPath={`url(#${clipId})`} />
 
             {/* Edge handles (visual indicators) */}
-            <line x1={vpLeft} y1={0} x2={vpLeft} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
-            <line x1={vpRight} y1={0} x2={vpRight} y2={OVERVIEW_HEIGHT} stroke={VIEWPORT_BORDER} strokeWidth={2} />
+            <line x1={vpLeft} y1={0} x2={vpLeft} y2={OVERVIEW_HEIGHT} stroke={theme.palette.waveform.overviewActiveFill} strokeWidth={2} />
+            <line x1={vpRight} y1={0} x2={vpRight} y2={OVERVIEW_HEIGHT} stroke={theme.palette.waveform.overviewActiveFill} strokeWidth={2} />
           </>}
 
           {/* Loop region highlight (display-only) */}
-          {loopRegion && !(loopRegion[0] <= 0.001 && loopRegion[1] >= duration - 0.001) && <>
-            <rect
-              x={(loopRegion[0] / duration) * containerWidth}
-              y={0}
-              width={Math.max(0, ((loopRegion[1] - loopRegion[0]) / duration) * containerWidth)}
-              height={OVERVIEW_HEIGHT}
-              fill={LOOP_REGION_COLOR}
-              pointerEvents="none"
-            />
-            <line
-              x1={(loopRegion[0] / duration) * containerWidth}
-              y1={0}
-              x2={(loopRegion[0] / duration) * containerWidth}
-              y2={OVERVIEW_HEIGHT}
-              stroke="#f57c00"
-              strokeWidth={1.5}
-              pointerEvents="none"
-            />
-            <line
-              x1={(loopRegion[1] / duration) * containerWidth}
-              y1={0}
-              x2={(loopRegion[1] / duration) * containerWidth}
-              y2={OVERVIEW_HEIGHT}
-              stroke="#f57c00"
-              strokeWidth={1.5}
-              pointerEvents="none"
-            />
-          </>}
+          {loopRegion && !isFullRange(loopRegion[0], loopRegion[1], duration) && (() => {
+            const loopStartX = (loopRegion[0] / duration) * containerWidth;
+            const loopEndX = (loopRegion[1] / duration) * containerWidth;
+            return <>
+              <rect
+                x={loopStartX}
+                y={0}
+                width={Math.max(0, loopEndX - loopStartX)}
+                height={OVERVIEW_HEIGHT}
+                fill={theme.palette.waveform.loopRegion}
+                pointerEvents="none"
+              />
+              <line
+                x1={loopStartX} y1={0} x2={loopStartX} y2={OVERVIEW_HEIGHT}
+                stroke={theme.palette.waveform.loopHandle}
+                strokeWidth={1.5}
+                pointerEvents="none"
+              />
+              <line
+                x1={loopEndX} y1={0} x2={loopEndX} y2={OVERVIEW_HEIGHT}
+                stroke={theme.palette.waveform.loopHandle}
+                strokeWidth={1.5}
+                pointerEvents="none"
+              />
+            </>;
+          })()}
 
           {/* Playhead */}
           <line
-            ref={playheadRef}
+            ref={ref}
             x1={0} y1={0} x2={0} y2={OVERVIEW_HEIGHT}
-            stroke={PLAYHEAD_COLOR}
+            stroke={theme.palette.waveform.playhead}
             strokeWidth={PLAYHEAD_WIDTH}
             pointerEvents="none"
           />
@@ -318,6 +302,6 @@ const OverviewBar = React.memo(function OverviewBar({
       )}
     </Box>
   );
-});
+}));
 
 export default OverviewBar;

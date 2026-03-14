@@ -1,68 +1,61 @@
 /**
- * SharedResults — displays results decoded from a share URL.
+ * SharedResults — displays results decoded from a self-contained share URL.
  */
 
-import React, { useState, useEffect } from 'react';
-import { Box, Button, CircularProgress, Container, Link, Typography } from '@mui/material';
-import { parseConfig } from '../utils/config';
-import { decodeTestResults } from '../utils/share';
+import { useMemo, useState, useEffect } from 'react';
+import { Box, Button, Link, Typography } from '@mui/material';
+import { decodeShareParam } from '../utils/share';
+import { rawLink } from '../utils/config';
 import Results from './Results';
 
 /**
  * @param {object} props
- * @param {string} props.configUrl - URL to YAML config
- * @param {string} props.resultsParam - Encoded results from URL
+ * @param {string} props.shareParam - Encoded share param (binary payload, base64)
  */
-export default function SharedResults({ configUrl, resultsParam }) {
-  const [config, setConfig] = useState(null);
-  const [stats, setStats] = useState(null);
-  const [error, setError] = useState(null);
+export default function SharedResults({ shareParam }) {
+  const { config, stats, configUrl, error } = useMemo(() => {
+    try {
+      const decoded = decodeShareParam(shareParam);
+      document.title = `Results — ${decoded.config.name} — acidtest.io`;
+      return decoded;
+    } catch (err) {
+      return { config: null, stats: null, configUrl: null, error: err.message };
+    }
+  }, [shareParam]);
 
+  // Verify config URL is still reachable before showing "Take the Test"
+  const [testUrl, setTestUrl] = useState(null);
   useEffect(() => {
-    parseConfig(configUrl)
-      .then((cfg) => {
-        setConfig(cfg);
-        document.title = `Results — ${cfg.name} — DBT`;
-        const decoded = decodeTestResults(resultsParam, cfg);
-        setStats(decoded);
+    if (!configUrl) return;
+    fetch(rawLink(configUrl))
+      .then((res) => {
+        if (res.ok) {
+          const u = new URL(window.location.origin + window.location.pathname);
+          u.searchParams.set('test', configUrl);
+          setTestUrl(u.toString());
+        }
       })
-      .catch((err) => setError(err.message));
-  }, [configUrl, resultsParam]);
+      .catch(() => {}); // Config gone — no button
+  }, [configUrl]);
 
   if (error) {
     return (
-      <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={4}>
-        <Container maxWidth="md">
-          <Typography color="error" variant="h6">Error</Typography>
-          <Typography>{error}</Typography>
-        </Container>
-      </Box>
+      <>
+        <Typography color="error" variant="h6">Error</Typography>
+        <Typography>{error}</Typography>
+      </>
     );
   }
-
-  if (!config || !stats) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  const testUrl = (() => {
-    const u = new URL(window.location.href);
-    u.searchParams.delete('results');
-    return u.toString();
-  })();
 
   return (
-    <Box sx={{ backgroundColor: '#f6f6f6', minHeight: '100vh' }} pt={2} pb={2}>
-      <Container maxWidth="md">
-        <Results
-          description={config.results?.description}
-          results={[]}
-          config={config}
-          precomputedStats={stats}
-        />
+    <>
+      <Results
+        description={null}
+        results={[]}
+        config={config}
+        precomputedStats={stats}
+      />
+      {testUrl && (
         <Box textAlign="center" mt={3}>
           <Button
             component={Link}
@@ -75,7 +68,7 @@ export default function SharedResults({ configUrl, resultsParam }) {
             Take the Test
           </Button>
         </Box>
-      </Container>
-    </Box>
+      )}
+    </>
   );
 }

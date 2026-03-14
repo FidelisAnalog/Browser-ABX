@@ -34,6 +34,22 @@ export class AudioEngine {
     this._context = new AudioContext({ sampleRate, latencyHint: 'interactive' });
     this._contextRate = this._context.sampleRate;
 
+    // Prevent bfcache — ensures the page (and AudioContext) is fully destroyed
+    // on navigation rather than cached in a half-alive state that leaks audio.
+    window.addEventListener('unload', () => {}); // Chrome
+    // Safari ignores unload listeners. Flush the audio pipeline with silence
+    // on navigation so any leaked samples from bfcache eviction are inaudible.
+    window.addEventListener('pagehide', () => {
+      if (this._activeSource) {
+        try { this._activeSource.stop(); } catch {}
+        try { this._activeSource.disconnect(); } catch {}
+      }
+      const silent = this._context.createBufferSource();
+      silent.buffer = this._context.createBuffer(1, 1, this._context.sampleRate);
+      silent.connect(this._context.destination);
+      silent.start();
+    });
+
     // Gain node for volume control
     this._gainNode = this._context.createGain();
     this._gainNode.connect(this._context.destination);
@@ -63,6 +79,14 @@ export class AudioEngine {
     // Transport micro-fade (anti-click)
     this._microFadeDuration = 0.003; // 3ms
     this._pendingFadeOut = null;
+
+    // Loop boundary fade — dips gain to zero around each native loop splice
+    // to eliminate clicks from waveform discontinuities at loopEnd→loopStart.
+    this._loopFadeDuration = 0.003; // 3ms fade-out + 3ms fade-in
+    this._loopFadeCount = 100;      // wraps to pre-schedule per batch
+    this._loopFadeRefillAt = 90;    // schedule next batch when this many wraps have elapsed
+    this._activeLoopFadeGain = null;
+    this._loopFadeTimer = null;
 
     // Crossfade
     this._crossfadeEnabled = false;
@@ -266,14 +290,19 @@ export class AudioEngine {
         // Still in bounds — re-anchor tracking, no source recreation (avoids pops)
         this._playStartTime = this._context.currentTime;
         this._playOffset = playingPos;
+        // Loop boundaries changed — reschedule loop fades from current position
+        this._clearLoopFades();
+        this._scheduleLoopFades(this._activeLoopFadeGain, playingPos, this._context.currentTime);
       } else {
         // Out of bounds — fade-swap to new position
         // Skip if a fade is already in flight (rapid drag — discard until done)
         if (this._pendingFadeOut) return;
         const oldSource = this._activeSource;
         const oldSourceGain = this._activeSourceGain;
+        const oldLoopFadeGain = this._activeLoopFadeGain;
         this._activeSource = null;
         this._activeSourceGain = null;
+        this._activeLoopFadeGain = null;
         const now = this._context.currentTime;
         const gain = this._gainNode.gain;
         gain.cancelScheduledValues(now);
@@ -285,9 +314,8 @@ export class AudioEngine {
             oldSource.disconnect();
             try { oldSource.stop(); } catch { /* */ }
           }
-          if (oldSourceGain) {
-            oldSourceGain.disconnect();
-          }
+          if (oldLoopFadeGain) oldLoopFadeGain.disconnect();
+          if (oldSourceGain) oldSourceGain.disconnect();
           this._startSource(this._loopStart);
           this._fadeIn();
         }, this._microFadeDuration * 1000 + 1);
@@ -312,12 +340,14 @@ export class AudioEngine {
 
   /**
    * Lock crossfade on/off based on test config.
-   * @param {boolean} forced
+   * @param {boolean|null} forced - true = force on, false = force off, null = user choice
    */
   setCrossfadeForced(forced) {
-    this._crossfadeForced = forced;
-    if (forced) {
+    this._crossfadeForced = forced !== null;
+    if (forced === true) {
       this._crossfadeEnabled = true;
+    } else if (forced === false) {
+      this._crossfadeEnabled = false;
     }
     this._notify();
   }
@@ -369,9 +399,10 @@ export class AudioEngine {
         const startAt = this._context.currentTime + this._switchLookahead;
         const switchPos = this._futurePosition(this._switchLookahead);
 
-        // Capture old source + its gain node
+        // Capture old source + its gain nodes
         const oldSource = this._activeSource;
         const oldSourceGain = this._activeSourceGain;
+        const oldLoopFadeGain = this._activeLoopFadeGain;
         const ready = this._readySources[index];
 
         // All ramps + start scheduled at startAt (in the future) — the audio thread
@@ -388,11 +419,14 @@ export class AudioEngine {
 
           this._activeSource = ready.source;
           this._activeSourceGain = ready.sourceGain;
+          this._activeLoopFadeGain = ready.loopFadeGain;
           this._readySources[index] = null;
           this._playStartTime = startAt;
           this._playOffset = switchPos;
+          this._scheduleLoopFades(ready.loopFadeGain, switchPos, startAt);
         } else {
           // Fallback: no ready source, create on the fly (may dip)
+          // _startSource handles loopFadeGain creation + scheduling
           this._startSource(switchPos, 0);
           this._activeSourceGain.gain.setValueAtTime(0, startAt);
           this._activeSourceGain.gain.linearRampToValueAtTime(1, startAt + dur);
@@ -403,6 +437,7 @@ export class AudioEngine {
           this._pendingCrossfadeCleanup = null;
           try { oldSource.stop(); } catch { /* */ }
           oldSource.disconnect();
+          if (oldLoopFadeGain) oldLoopFadeGain.disconnect();
           oldSourceGain.disconnect();
           // Re-prepare both tracks' ready sources
           if (prevTrack >= 0 && prevTrack < this._buffers.length && !this._readySources[prevTrack]) {
@@ -418,6 +453,7 @@ export class AudioEngine {
         if (ready) {
           const oldSource = this._activeSource;
           const oldSourceGain = this._activeSourceGain;
+          const oldLoopFadeGain = this._activeLoopFadeGain;
           const switchAt = this._context.currentTime + this._switchLookahead;
           const switchPos = this._futurePosition(this._switchLookahead);
 
@@ -430,14 +466,17 @@ export class AudioEngine {
 
           this._activeSource = ready.source;
           this._activeSourceGain = ready.sourceGain;
+          this._activeLoopFadeGain = ready.loopFadeGain;
           this._readySources[index] = null;
           this._playStartTime = switchAt;
           this._playOffset = switchPos;
+          this._scheduleLoopFades(ready.loopFadeGain, switchPos, switchAt);
 
           // Defer ALL graph mutations to a separate task so they can't
           // share a render quantum with the start/stop above.
           setTimeout(() => {
             if (oldSource) oldSource.disconnect();
+            if (oldLoopFadeGain) oldLoopFadeGain.disconnect();
             if (oldSourceGain) oldSourceGain.disconnect();
             if (prevTrack >= 0 && prevTrack < this._buffers.length && !this._readySources[prevTrack]) {
               this._readySources[prevTrack] = this._prepareSource(prevTrack);
@@ -445,14 +484,17 @@ export class AudioEngine {
           }, 0);
         } else {
           // Fallback: no pre-created source available, create on the fly
+          // _startSource handles loopFadeGain creation + scheduling
           const oldSource = this._activeSource;
           const oldSourceGain = this._activeSourceGain;
+          const oldLoopFadeGain = this._activeLoopFadeGain;
           this._startSource(position);
           if (oldSource) {
             try { oldSource.stop(); } catch { /* */ }
           }
           setTimeout(() => {
             if (oldSource) oldSource.disconnect();
+            if (oldLoopFadeGain) oldLoopFadeGain.disconnect();
             if (oldSourceGain) oldSourceGain.disconnect();
           }, 50);
         }
@@ -564,8 +606,10 @@ export class AudioEngine {
       // Fade out, swap sources at silence, fade in — no gain restore between
       const oldSource = this._activeSource;
       const oldSourceGain = this._activeSourceGain;
+      const oldLoopFadeGain = this._activeLoopFadeGain;
       this._activeSource = null;
       this._activeSourceGain = null;
+      this._activeLoopFadeGain = null;
       this._playOffset = clampedTime;
       this._playStartTime = this._context.currentTime;
       this._cancelFadeOut();
@@ -580,9 +624,8 @@ export class AudioEngine {
           try { oldSource.stop(); } catch { /* */ }
           oldSource.disconnect();
         }
-        if (oldSourceGain) {
-          oldSourceGain.disconnect();
-        }
+        if (oldLoopFadeGain) oldLoopFadeGain.disconnect();
+        if (oldSourceGain) oldSourceGain.disconnect();
         // Gain is at 0 — start new source silent, then ramp up
         this._startSource(clampedTime);
         this._fadeIn();
@@ -672,21 +715,24 @@ export class AudioEngine {
     return pos;
   }
 
-  /** Pre-create a source + gain node for one track, wired into the graph but not started. */
+  /** Pre-create a source + gain nodes for one track, wired into the graph but not started. */
   _prepareSource(trackIndex) {
     const buffer = this._buffers[trackIndex];
     if (!buffer) return null;
     const sourceGain = this._context.createGain();
     sourceGain.gain.value = 1;
     sourceGain.connect(this._gainNode);
+    const loopFadeGain = this._context.createGain();
+    loopFadeGain.gain.value = 1;
+    loopFadeGain.connect(sourceGain);
     const source = new AudioBufferSourceNode(this._context, {
       buffer,
       loop: true,
       loopStart: this._loopStart,
       loopEnd: this._loopEnd,
     });
-    source.connect(sourceGain);
-    return { source, sourceGain };
+    source.connect(loopFadeGain);
+    return { source, loopFadeGain, sourceGain };
   }
 
   /** Pre-create sources for all tracks (called at loadBuffers time). */
@@ -700,6 +746,7 @@ export class AudioEngine {
     for (const ready of this._readySources) {
       if (ready) {
         ready.source.disconnect();
+        ready.loopFadeGain.disconnect();
         ready.sourceGain.disconnect();
       }
     }
@@ -714,6 +761,7 @@ export class AudioEngine {
     const ready = this._readySources[this._selectedTrack];
     if (ready) {
       ready.source.disconnect();
+      ready.loopFadeGain.disconnect();
       ready.sourceGain.disconnect();
       this._readySources[this._selectedTrack] = null;
     }
@@ -722,31 +770,41 @@ export class AudioEngine {
     sourceGain.gain.value = gainValue;
     sourceGain.connect(this._gainNode);
 
+    const loopFadeGain = this._context.createGain();
+    loopFadeGain.gain.value = 1;
+    loopFadeGain.connect(sourceGain);
+
     const source = new AudioBufferSourceNode(this._context, {
       buffer,
       loop: true,
       loopStart: this._loopStart,
       loopEnd: this._loopEnd,
     });
-    source.connect(sourceGain);
+    source.connect(loopFadeGain);
     source.start(0, fromTime);
 
     this._activeSource = source;
     this._activeSourceGain = sourceGain;
+    this._activeLoopFadeGain = loopFadeGain;
     this._playStartTime = this._context.currentTime;
     this._playOffset = fromTime;
+    this._scheduleLoopFades(loopFadeGain, fromTime, this._context.currentTime);
   }
 
-  /** Disconnect source + its gain node from graph before stopping — prevents pops. */
+  /** Disconnect source + its gain nodes from graph before stopping — prevents pops. */
   _silenceAndStopSource() {
     if (!this._activeSource) return;
     const track = this._selectedTrack;
     this._activeSource.disconnect();
     try { this._activeSource.stop(); } catch { /* */ }
+    if (this._activeLoopFadeGain) {
+      this._activeLoopFadeGain.disconnect();
+    }
     if (this._activeSourceGain) {
       this._activeSourceGain.disconnect();
     }
     this._activeSource = null;
+    this._activeLoopFadeGain = null;
     this._activeSourceGain = null;
     // Re-prepare ready source for the stopped track
     if (track >= 0 && track < this._buffers.length
@@ -758,6 +816,71 @@ export class AudioEngine {
   _setTransportState(state) {
     this._transportState = state;
     this._notify();
+  }
+
+  /**
+   * Schedule gain dips on a loopFadeGain node for upcoming loop wrap points.
+   * Each wrap gets a 3ms fade-out before the splice and 3ms fade-in after.
+   * All automation runs on the audio thread — no JS timing dependency.
+   * @param {GainNode} loopFadeGain
+   * @param {number} playOffset - Buffer position where playback starts
+   * @param {number} contextStartTime - context.currentTime when playback starts
+   */
+  _scheduleLoopFades(loopFadeGain, playOffset, contextStartTime) {
+    const loopDur = this._loopEnd - this._loopStart;
+    const fadeDur = this._loopFadeDuration;
+
+    // Guard: loop too short for fading
+    if (loopDur < fadeDur * 3) return;
+
+    const gain = loopFadeGain.gain;
+    const now = this._context.currentTime;
+
+    // Time from playback start until first wrap
+    const timeToFirstWrap = this._loopEnd - playOffset;
+    let wrapContextTime = contextStartTime + timeToFirstWrap;
+
+    for (let i = 0; i < this._loopFadeCount; i++) {
+      const fadeOutStart = wrapContextTime - fadeDur;
+
+      // Skip wraps already in the past
+      if (wrapContextTime + fadeDur < now) {
+        wrapContextTime += loopDur;
+        continue;
+      }
+
+      // Anchor at full gain, ramp down to 0 at wrap point, ramp back up
+      gain.setValueAtTime(1, fadeOutStart);
+      gain.linearRampToValueAtTime(0, wrapContextTime);
+      gain.linearRampToValueAtTime(1, wrapContextTime + fadeDur);
+
+      wrapContextTime += loopDur;
+    }
+
+    // Lazy refill timer — fires at wrap 90, schedules 100 more from where this batch ends.
+    // Not timing-critical: 10 wraps of runway remain (minimum 5s at shortest 500ms loop).
+    clearTimeout(this._loopFadeTimer);
+    const refillTime = wrapContextTime - ((this._loopFadeCount - this._loopFadeRefillAt) * loopDur);
+    const refillDelay = (refillTime - this._context.currentTime) * 1000;
+    if (refillDelay > 0) {
+      this._loopFadeTimer = setTimeout(() => {
+        this._scheduleLoopFades(loopFadeGain, this._loopStart, wrapContextTime - loopDur);
+      }, refillDelay);
+    }
+  }
+
+  /**
+   * Cancel all scheduled loop boundary fades on the active source
+   * and restore its loopFadeGain to full volume.
+   */
+  _clearLoopFades() {
+    clearTimeout(this._loopFadeTimer);
+    this._loopFadeTimer = null;
+    if (!this._activeLoopFadeGain) return;
+    const now = this._context.currentTime;
+    const gain = this._activeLoopFadeGain.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(1, now);
   }
 
   _startAnimation() {

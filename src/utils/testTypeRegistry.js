@@ -1,15 +1,20 @@
 /**
  * Test type registry — central lookup for all test type behavior.
  *
- * Each base type (ab, abx, triangle, etc.) maps to a descriptor containing
- * component references, stats functions, and behavioral flags.
+ * Each base type (ab, abx, triangle, etc.) maps to a descriptor containing:
+ * - Plugin functions: setup, processSubmit, isComplete, mergeResults
+ * - UI references: testComponent, statsComponent
+ * - Stats: computeStats
+ * - Behavioral flags: supportsConfidence, waveformExtraTracks, etc.
+ *
  * The +C confidence suffix is handled by parseTestType(), not as
  * separate registry entries.
+ *
+ * See docs/test-type-architecture.md for the full plugin contract.
  */
 
 import ABTest from '../components/ABTest';
 import ABXTest from '../components/ABXTest';
-import ABXYTest from '../components/ABXYTest';
 import TriangleTest from '../components/TriangleTest';
 import SameDiffTest from '../components/SameDiffTest';
 import StaircaseTest from '../components/StaircaseTest';
@@ -22,6 +27,12 @@ import {
   computeAbStats, computeAbxStats, computeTriangleStats, computeSameDiffStats,
   computeStaircaseStats,
 } from '../stats/statistics';
+
+import * as abType from '../testTypes/ab';
+import * as abxType from '../testTypes/abx';
+import * as triangleType from '../testTypes/triangle';
+import * as sameDiffType from '../testTypes/sameDiff';
+import * as staircaseType from '../testTypes/staircase';
 
 /**
  * Parse a testType string into base type key + confidence flag.
@@ -41,74 +52,86 @@ export function parseTestType(testType) {
  */
 export const TEST_TYPES = {
   ab: {
+    setup: abType.setup,
+    processSubmit: abType.processSubmit,
+    isComplete: abType.isComplete,
+    mergeResults: abType.mergeResults,
     testComponent: ABTest,
     statsComponent: ABStats,
     computeStats: computeAbStats,
     resultDataKey: 'userSelections',
     supportsConfidence: false,
-    reshuffleEveryIteration: true,
     waveformExtraTracks: 0,
-    submitType: 'ab',
     shareEncoding: 'ab',
     isAdaptive: false,
   },
   abx: {
+    setup: abxType.setup,
+    processSubmit: abxType.processSubmit,
+    isComplete: abxType.isComplete,
+    mergeResults: abxType.mergeResults,
     testComponent: ABXTest,
     statsComponent: ABXStats,
     computeStats: computeAbxStats,
     resultDataKey: 'userSelectionsAndCorrects',
     supportsConfidence: true,
-    reshuffleEveryIteration: false,
     waveformExtraTracks: 1,
-    submitType: 'abx',
     shareEncoding: 'abx',
     isAdaptive: false,
   },
   abxy: {
-    testComponent: ABXYTest,
+    setup: abxType.setup,
+    processSubmit: abxType.processSubmit,
+    isComplete: abxType.isComplete,
+    mergeResults: abxType.mergeResults,
+    testComponent: ABXTest,
     statsComponent: ABXStats,
     computeStats: computeAbxStats,
     resultDataKey: 'userSelectionsAndCorrects',
     supportsConfidence: true,
-    reshuffleEveryIteration: false,
     waveformExtraTracks: 2,
-    submitType: 'abx',
     shareEncoding: 'abx',
     isAdaptive: false,
   },
   triangle: {
+    setup: triangleType.setup,
+    processSubmit: triangleType.processSubmit,
+    isComplete: triangleType.isComplete,
+    mergeResults: triangleType.mergeResults,
     testComponent: TriangleTest,
     statsComponent: TriangleStats,
     computeStats: computeTriangleStats,
     resultDataKey: 'userSelectionsAndCorrects',
     supportsConfidence: true,
-    reshuffleEveryIteration: false,
     waveformExtraTracks: 1,
-    submitType: 'abx',
     shareEncoding: 'triangle',
     isAdaptive: false,
   },
   '2afc-sd': {
+    setup: sameDiffType.setup,
+    processSubmit: sameDiffType.processSubmit,
+    isComplete: sameDiffType.isComplete,
+    mergeResults: sameDiffType.mergeResults,
     testComponent: SameDiffTest,
     statsComponent: SameDiffStats,
     computeStats: computeSameDiffStats,
     resultDataKey: 'userSelectionsAndCorrects',
     supportsConfidence: true,
-    reshuffleEveryIteration: false,
     waveformExtraTracks: 0,
-    submitType: 'samediff',
     shareEncoding: '2afc-sd',
     isAdaptive: false,
   },
   '2afc-staircase': {
+    setup: staircaseType.setup,
+    processSubmit: staircaseType.processSubmit,
+    isComplete: staircaseType.isComplete,
+    mergeResults: staircaseType.mergeResults,
     testComponent: StaircaseTest,
     statsComponent: StaircaseStats,
     computeStats: computeStaircaseStats,
     resultDataKey: 'staircaseData',
     supportsConfidence: false,
-    reshuffleEveryIteration: false,
     waveformExtraTracks: 0,
-    submitType: 'staircase',
     shareEncoding: '2afc-staircase',
     isAdaptive: true,
   },

@@ -20,7 +20,7 @@ export default function Label({ color = 'secondary', children }) {
       sx={{
         display: 'inline-block',
         backgroundColor: bgColor,
-        color: '#fff',
+        color: theme.palette[color]?.contrastText || '#fff',
         borderRadius: '4px',
         padding: '2px 8px',
         fontSize: '0.75rem',

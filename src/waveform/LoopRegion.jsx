@@ -5,9 +5,8 @@
  */
 
 import React from 'react';
-
-const REGION_COLOR = 'rgba(255, 152, 0, 0.15)';
-const HANDLE_COLOR = '#f57c00';
+import { useTheme } from '@mui/material';
+import { isFullRange } from './generateWaveform';
 const HANDLE_TRIANGLE_SIZE = 8;
 
 /**
@@ -25,43 +24,44 @@ const LoopRegion = React.memo(function LoopRegion({
   height,
   timeToX,
 }) {
+  const theme = useTheme();
   const startX = timeToX(loopRegion[0]);
   const endX = timeToX(loopRegion[1]);
   const regionWidth = endX - startX;
 
   // If loop covers the full duration, don't render (no loop set)
-  const isFullRange = loopRegion[0] <= 0.001 && loopRegion[1] >= duration - 0.001;
+  const fullRange = isFullRange(loopRegion[0], loopRegion[1], duration);
 
   return (
     <g>
       {/* Dimmed areas outside loop region */}
-      {!isFullRange && (
+      {!fullRange && (
         <>
           <rect
             x={0}
             y={0}
             width={Math.max(0, startX)}
             height={height}
-            fill="rgba(0,0,0,0.15)"
+            fill={theme.palette.waveform.loopDim}
           />
           <rect
             x={endX}
             y={0}
             width={Math.max(0, width - endX)}
             height={height}
-            fill="rgba(0,0,0,0.15)"
+            fill={theme.palette.waveform.loopDim}
           />
         </>
       )}
 
       {/* Loop region highlight */}
-      {!isFullRange && (
+      {!fullRange && (
         <rect
           x={startX}
           y={0}
           width={Math.max(0, regionWidth)}
           height={height}
-          fill={REGION_COLOR}
+          fill={theme.palette.waveform.loopRegion}
         />
       )}
 
@@ -71,18 +71,18 @@ const LoopRegion = React.memo(function LoopRegion({
         y1={0}
         x2={startX}
         y2={height}
-        stroke={HANDLE_COLOR}
+        stroke={theme.palette.waveform.loopHandle}
         strokeWidth={2}
         style={{ pointerEvents: 'none' }}
       />
       <polygon
         points={`${startX},0 ${startX + HANDLE_TRIANGLE_SIZE},0 ${startX},${HANDLE_TRIANGLE_SIZE}`}
-        fill={HANDLE_COLOR}
+        fill={theme.palette.waveform.loopHandle}
         style={{ pointerEvents: 'none' }}
       />
       <polygon
         points={`${startX},${height} ${startX + HANDLE_TRIANGLE_SIZE},${height} ${startX},${height - HANDLE_TRIANGLE_SIZE}`}
-        fill={HANDLE_COLOR}
+        fill={theme.palette.waveform.loopHandle}
         style={{ pointerEvents: 'none' }}
       />
 
@@ -92,18 +92,18 @@ const LoopRegion = React.memo(function LoopRegion({
         y1={0}
         x2={endX}
         y2={height}
-        stroke={HANDLE_COLOR}
+        stroke={theme.palette.waveform.loopHandle}
         strokeWidth={2}
         style={{ pointerEvents: 'none' }}
       />
       <polygon
         points={`${endX},0 ${endX - HANDLE_TRIANGLE_SIZE},0 ${endX},${HANDLE_TRIANGLE_SIZE}`}
-        fill={HANDLE_COLOR}
+        fill={theme.palette.waveform.loopHandle}
         style={{ pointerEvents: 'none' }}
       />
       <polygon
         points={`${endX},${height} ${endX - HANDLE_TRIANGLE_SIZE},${height} ${endX},${height - HANDLE_TRIANGLE_SIZE}`}
-        fill={HANDLE_COLOR}
+        fill={theme.palette.waveform.loopHandle}
         style={{ pointerEvents: 'none' }}
       />
     </g>

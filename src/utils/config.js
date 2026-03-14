@@ -12,7 +12,7 @@ import { STAIRCASE_DEFAULTS } from '../stats/staircase';
  * @param {string} urlStr
  * @returns {string}
  */
-function rawLink(urlStr) {
+export function rawLink(urlStr) {
   try {
     const url = new URL(urlStr);
     if (url.hostname === 'www.dropbox.com' || url.hostname === 'dropbox.com') {
@@ -32,13 +32,18 @@ function rawLink(urlStr) {
  * @returns {Promise<object>} Parsed and normalized config
  */
 export async function parseConfig(configUrl) {
-  const url = rawLink(configUrl);
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch config: ${configUrl} (${response.status})`);
+  let raw;
+  try {
+    const url = rawLink(configUrl);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const text = await response.text();
+    raw = yaml.load(text);
+  } catch (err) {
+    throw new Error(`Failed to load config from ${configUrl}: ${err.message}`);
   }
-  const text = await response.text();
-  const raw = yaml.load(text);
 
   return normalizeConfig(raw);
 }
@@ -124,7 +129,7 @@ function normalizeStaircaseConfig(test, nOptions) {
  * @param {object} raw - Raw parsed YAML
  * @returns {object} Normalized config
  */
-function normalizeConfig(raw) {
+export function normalizeConfig(raw) {
   if (!raw.name) throw new Error('Config must have a "name" field');
   if (!raw.options || raw.options.length === 0) throw new Error('Config must have "options"');
   if (!raw.tests || raw.tests.length === 0) throw new Error('Config must have "tests"');
@@ -196,7 +201,7 @@ function normalizeConfig(raw) {
       description: test.description || null,
       options: testOptions,
       repeat,
-      crossfade: test.crossfade ?? false,
+      crossfade: test.crossfade ?? null,
       crossfadeDuration: test.crossfadeDuration ?? null,
       showProgress: test.showProgress ?? false,
       balanced: test.balanced ?? true,
